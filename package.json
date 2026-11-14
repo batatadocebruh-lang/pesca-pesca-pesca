@@ -1,0 +1,22 @@
+{
+  "name": "pesca-roblox-bot",
+  "version": "1.1.0",
+  "description": "Automação de pesca no Roblox utilizando keysender e template matching em buffer BGRA",
+  "main": "bot.ts",
+  "scripts": {
+    "start": "tsc && node --expose-gc --max-old-space-size=96 dist/bot.js",
+    "config": "tsc && node --expose-gc --max-old-space-size=96 dist/bot.js config",
+    "test": "tsc && node --expose-gc --max-old-space-size=96 dist/bot.js test",
+    "build": "tsc"
+  },
+  "dependencies": {
+    "keysender": "^2.4.0",
+    "pngjs": "^7.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/pngjs": "^6.0.5",
+    "tsx": "^4.19.0",
+    "typescript": "^5.7.0"
+  }
+}

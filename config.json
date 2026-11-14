@@ -1,0 +1,33 @@
+{
+  "roi": {
+    "x": 238,
+    "y": 630,
+    "width": 965,
+    "height": 221
+  },
+  "timings": {
+    "castHoldMs": 1100,
+    "pollingIntervalMs": 35,
+    "biteTimeoutMs": 12000,
+    "captureDurationMs": 2700,
+    "clickPressMs": 25,
+    "clickReleaseMs": 25,
+    "postCaptureDelayMs": 1500,
+    "keyPressMs": 100,
+    "slotSwitchDelayMs": 500,
+    "postEquipDelayMs": 1200,
+    "cooldownMs": 4000
+  },
+  "hotbar": {
+    "enabled": false,
+    "resetSlotKey": "1",
+    "rodSlotKey": "3"
+  },
+  "autoclicker": {
+    "cps": 20
+  },
+  "vision": {
+    "threshold": 0.78,
+    "useCardFrameFallback": true
+  }
+}
