@@ -202,6 +202,25 @@ try {
         Write-Host "Atalho do bot unificado (Pesca + Macros) criado em C:\Users\Public\Desktop\Iniciar_Bot_Pesca.bat."
     }
 
+    # Atalho direto do cliente RDP nativo (Tela Cheia adaptativa + Mouse Relativo) na Area de Trabalho do usuario atual
+    $conectarBat = Join-Path $pescaTarget "Conectar_RDP_BotUser.bat"
+    $userDesktopDir = Join-Path $env:USERPROFILE "Desktop"
+    if ((Test-Path -LiteralPath $conectarBat) -and (Test-Path -LiteralPath $userDesktopDir)) {
+        try {
+            $lnkPath = Join-Path $userDesktopDir "Conectar_RDP_BotUser.lnk"
+            $wshShell = New-Object -ComObject WScript.Shell
+            $shortcut = $wshShell.CreateShortcut($lnkPath)
+            $shortcut.TargetPath = $conectarBat
+            $shortcut.WorkingDirectory = $pescaTarget
+            $shortcut.IconLocation = "$env:SystemRoot\System32\mstsc.exe,0"
+            $shortcut.Description = "Conectar ao BotUser (960x600 internos, Tela Cheia adaptativa e Mouse Relativo)"
+            $shortcut.Save()
+            Write-Host "Atalho direto do cliente RDP criado em $lnkPath"
+        } catch {
+            Write-Host "Aviso: nao foi possivel criar Conectar_RDP_BotUser.lnk na Area de Trabalho ($($_.Exception.Message))."
+        }
+    }
+
     Write-Host "=== [2/5] Aplicando RemoteDesktop_SuppressWhenMinimized = 2 e cliente RDP enxuto ==="
     $suppressPaths = @(
         "HKLM:\SOFTWARE\Microsoft\Terminal Server Client",

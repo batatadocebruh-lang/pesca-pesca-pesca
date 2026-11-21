@@ -25,5 +25,5 @@ if errorlevel 1 (
 )
 
 :run
-start "" "%EXE%"
+start "" "%EXE%" %*
 endlocal

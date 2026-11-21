@@ -29,11 +29,16 @@ Antes de começar, certifique-se de ter no seu computador:
 
 Na sua sessão normal do Windows:
 
-1. Dê um duplo clique em **[`Conectar_RDP_BotUser.bat`](Conectar_RDP_BotUser.bat)** (que abre `mstsc.exe /v:127.0.0.2 /w:960 /h:600`) ou abra **[`Sessao_BotUser.rdp`](Sessao_BotUser.rdp)**.
+1. Dê um duplo clique em **[`Conectar_RDP_BotUser.bat`](Conectar_RDP_BotUser.bat)** (ou no atalho **`Conectar_RDP_BotUser`** criado na Área de Trabalho). Ele compila/abre o cliente nativo [`RdpBotClient.cs`](RdpBotClient.cs) (`mstscax.dll`) já em **Tela Cheia adaptativa** para a resolução do seu monitor, mantendo a sessão interna fixa em `960x600` (para preservar a ROI) e o **Mouse Relativo** ativo para o Shift Lock do Roblox. *(Dica: [`Sessao_BotUser.rdp`](Sessao_BotUser.rdp) é apenas o perfil legado para o `mstsc.exe` padrão, que trava janelas maximizadas em `960x600` e não ativa mouse relativo em jogos desktop).*
+   - **Atalhos da janela RDP (`RdpBotClient`):**
+     - `Ctrl+Alt+Enter` ou `Ctrl+Alt+Break` — Alterna entre **Tela Cheia** e **Janela Maximizada** (ou mova o mouse para o topo central para abrir a barra flutuante).
+     - `Ctrl+Alt+M` — Liga/desliga **Mouse Relativo** (para câmera 360° / Shift Lock no Roblox).
+     - `Ctrl+Alt+\` — Libera/restaura a captura do cursor na sessão remota.
+     - Passe `--windowed` ao [`Conectar_RDP_BotUser.bat`](Conectar_RDP_BotUser.bat) se preferir abrir já em modo janela maximizada.
 2. Se pedir usuário e senha no primeiro logon:
    - **Usuário:** `BotUser` (ou `.\BotUser`)
    - **Senha:** `123`
-3. Dentro dessa janela remota (`960x600`), abra o Roblox, entre no jogo e deixe a janela **maximizada**.
+3. Dentro dessa sessão remota (`960x600` internos), abra o Roblox, entre no jogo e deixe a janela **maximizada**.
 
 ---
 
@@ -82,7 +87,7 @@ No terminal do bot, use os comandos abaixo (todas as alterações são validadas
 
 ## Passo 5 — Como minimizar corretamente sem travar o bot
 
-> **REGRA DE OURO:** Para voltar a usar seu PC normalmente, clique **SEMPRE no botão Minimizar (`_`)** na barra azul superior da janela remota. **NUNCA feche a janela no `X`.**
+> **REGRA DE OURO:** Para voltar a usar seu PC normalmente, clique **SEMPRE no botão Minimizar (`_`)** (na barra flutuante no topo central em Tela Cheia, ou no `_` da janela). **NUNCA feche a janela no `X`.**
 
 - **Se você fechar no `X`**: o cliente RDP desconecta a sessão visual do `BotUser` e o Windows pausa a composição da tela remota.
 - **Se você clicar em Minimizar (`_`)**: a chave **`RemoteDesktop_SuppressWhenMinimized = 2`** mantém a renderização DWM ativa em segundo plano enquanto você usa seu computador principal livremente.

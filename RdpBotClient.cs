@@ -2,8 +2,10 @@ using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Drawing;
+using System.Drawing.Imaging;
 using System.IO;
 using System.Runtime.InteropServices;
+using System.Runtime.InteropServices.ComTypes;
 using System.Text;
 using System.Windows.Forms;
 
@@ -26,6 +28,66 @@ namespace RdpBotClientApp
         void get_Property([MarshalAs(UnmanagedType.BStr)] string bstrPropertyName, out object pValue);
     }
 
+    [ComImport]
+    [Guid("336d5562-efa8-482e-8cb3-c5c0fc7a7db6")]
+    [InterfaceType(ComInterfaceType.InterfaceIsIDispatch)]
+    public interface IMsTscAxEvents
+    {
+        [DispId(2)]
+        void OnConnected();
+        [DispId(4)]
+        void OnDisconnected(int discReason);
+        [DispId(8)]
+        void OnRequestGoFullScreen();
+        [DispId(9)]
+        void OnRequestLeaveFullScreen();
+        [DispId(14)]
+        void OnRequestContainerMinimize();
+        [DispId(26)]
+        void OnMouseInputModeChanged([MarshalAs(UnmanagedType.VariantBool)] bool fMouseModeRelative);
+    }
+
+    [ClassInterface(ClassInterfaceType.None)]
+    internal sealed class RdpEventSink : IMsTscAxEvents
+    {
+        private readonly RdpBotForm owner;
+
+        public RdpEventSink(RdpBotForm ownerForm)
+        {
+            owner = ownerForm;
+        }
+
+        public void OnConnected()
+        {
+            owner.HandleRdpConnected();
+        }
+
+        public void OnDisconnected(int discReason)
+        {
+            owner.HandleRdpDisconnected(discReason);
+        }
+
+        public void OnRequestGoFullScreen()
+        {
+            owner.HandleRdpRequestToggleFullScreen();
+        }
+
+        public void OnRequestLeaveFullScreen()
+        {
+            owner.HandleRdpRequestToggleFullScreen();
+        }
+
+        public void OnRequestContainerMinimize()
+        {
+            owner.HandleRdpRequestMinimize();
+        }
+
+        public void OnMouseInputModeChanged(bool fMouseModeRelative)
+        {
+            owner.HandleRdpMouseInputModeChanged(fMouseModeRelative);
+        }
+    }
+
     internal sealed class RdpAxControl : AxHost
     {
         public RdpAxControl(string clsid) : base(clsid) { }
@@ -36,13 +98,141 @@ namespace RdpBotClientApp
         }
     }
 
+    internal sealed class FullscreenBarForm : Form
+    {
+        private readonly Button btnWindow;
+        private readonly Button btnRelativeMouse;
+        private readonly Button btnScaleMode;
+        private readonly Button btnMinimize;
+        private readonly Button btnClose;
+        private readonly FlowLayoutPanel flow;
+
+        public event EventHandler RequestWindowed;
+        public event EventHandler RequestToggleRelativeMouse;
+        public event EventHandler RequestToggleScaleMode;
+        public event EventHandler RequestMinimize;
+        public event EventHandler RequestCloseApp;
+
+        protected override bool ShowWithoutActivation
+        {
+            get { return true; }
+        }
+
+        public FullscreenBarForm()
+        {
+            FormBorderStyle = FormBorderStyle.None;
+            ShowInTaskbar = false;
+            StartPosition = FormStartPosition.Manual;
+            AutoScaleMode = AutoScaleMode.None;
+            BackColor = Color.FromArgb(24, 26, 32);
+            Padding = new Padding(6, 3, 6, 3);
+
+            flow = new FlowLayoutPanel
+            {
+                Dock = DockStyle.Fill,
+                AutoSize = true,
+                WrapContents = false,
+                BackColor = Color.Transparent,
+                Margin = new Padding(0),
+                Padding = new Padding(0)
+            };
+
+            btnWindow = CreateBarButton("Janela (Ctrl+Alt+Enter)", Color.FromArgb(46, 52, 64));
+            btnWindow.Click += delegate { if (RequestWindowed != null) RequestWindowed(this, EventArgs.Empty); };
+
+            btnRelativeMouse = CreateBarButton("Mouse Relativo: ON (Ctrl+Alt+M)", Color.FromArgb(38, 108, 68));
+            btnRelativeMouse.Click += delegate { if (RequestToggleRelativeMouse != null) RequestToggleRelativeMouse(this, EventArgs.Empty); };
+
+            btnScaleMode = CreateBarButton("Escala: Preencher", Color.FromArgb(46, 52, 64));
+            btnScaleMode.Click += delegate { if (RequestToggleScaleMode != null) RequestToggleScaleMode(this, EventArgs.Empty); };
+
+            btnMinimize = CreateBarButton(" _ ", Color.FromArgb(46, 52, 64));
+            btnMinimize.Click += delegate { if (RequestMinimize != null) RequestMinimize(this, EventArgs.Empty); };
+
+            btnClose = CreateBarButton(" X ", Color.FromArgb(130, 42, 46));
+            btnClose.Click += delegate { if (RequestCloseApp != null) RequestCloseApp(this, EventArgs.Empty); };
+
+            flow.Controls.Add(btnWindow);
+            flow.Controls.Add(btnRelativeMouse);
+            flow.Controls.Add(btnScaleMode);
+            flow.Controls.Add(btnMinimize);
+            flow.Controls.Add(btnClose);
+
+            Controls.Add(flow);
+            Paint += OnBarPaint;
+            RecalcLayout();
+        }
+
+        private static Button CreateBarButton(string text, Color backColor)
+        {
+            return new Button
+            {
+                Text = text,
+                AutoSize = true,
+                AutoSizeMode = AutoSizeMode.GrowAndShrink,
+                MinimumSize = new Size(28, 24),
+                Padding = new Padding(6, 0, 6, 0),
+                FlatStyle = FlatStyle.Flat,
+                ForeColor = Color.White,
+                BackColor = backColor,
+                Font = new Font("Segoe UI", 8.2f),
+                Margin = new Padding(0, 0, 5, 0),
+                TabStop = false
+            };
+        }
+
+        private void OnBarPaint(object sender, PaintEventArgs e)
+        {
+            using (var pen = new Pen(Color.FromArgb(72, 82, 102)))
+            {
+                e.Graphics.DrawRectangle(pen, 0, 0, Width - 1, Height - 1);
+            }
+        }
+
+        public void SyncState(bool relativeMouseEnabled, bool fillWindowMode)
+        {
+            btnRelativeMouse.Text = relativeMouseEnabled
+                ? "Mouse Relativo: ON (Ctrl+Alt+M)"
+                : "Mouse Relativo: OFF (Ctrl+Alt+M)";
+            btnRelativeMouse.BackColor = relativeMouseEnabled
+                ? Color.FromArgb(38, 108, 68)
+                : Color.FromArgb(88, 52, 52);
+
+            btnScaleMode.Text = fillWindowMode ? "Escala: Preencher" : "Escala: 16:10";
+            RecalcLayout();
+        }
+
+        public void RecalcLayout()
+        {
+            Size pref = flow.GetPreferredSize(new Size(2000, 40));
+            int w = Math.Max(320, pref.Width + Padding.Horizontal);
+            int h = Math.Max(30, pref.Height + Padding.Vertical);
+            Size = new Size(w, h);
+        }
+
+        public void PositionAtTopCenter(Rectangle screenBounds)
+        {
+            RecalcLayout();
+            int x = screenBounds.Left + Math.Max(0, (screenBounds.Width - Width) / 2);
+            int y = screenBounds.Top;
+            Location = new Point(x, y);
+        }
+    }
+
+    internal sealed class ClientLaunchOptions
+    {
+        public bool StartWindowed;
+        public string DiagnosticsPath;
+        public string SoftwareCaptureFullscreenPath;
+        public string SoftwareCaptureWindowedPath;
+    }
+
     public sealed class RdpBotForm : Form
     {
         private const int RemoteWidth = 960;
         private const int RemoteHeight = 600;
-        private const int ToolbarHeight = 30;
-        private const int PerfDisableBase = 0x0F; // wallpaper + fullwindowdrag + menuanims + theming disabled; font smoothing + desktop comp off
-        private const uint ModControlAlt = 0x0001 | 0x0002;
+        private const int PerfDisableBase = 0x0F;
+        private const uint ModControlAltNoRepeat = 0x0001 | 0x0002 | 0x4000;
         private const int HotkeyFullscreenId = 101;
         private const int HotkeyRelativeMouseId = 102;
         private const int WmHotkey = 0x0312;
@@ -53,6 +243,14 @@ namespace RdpBotClientApp
             "a0c63c30-f08d-4ab4-907c-34905d770c7d", // MsRdpClient10NotSafeForScripting
             "8b918b82-7985-4c24-89df-c33ad2bbfbcd"  // MsRdpClient9NotSafeForScripting
         };
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct RECT
+        {
+            public int Left, Top, Right, Bottom;
+        }
+
+        private delegate bool EnumChildProc(IntPtr hWnd, IntPtr lParam);
 
         [DllImport("user32.dll")]
         private static extern bool SetProcessDpiAwarenessContext(IntPtr value);
@@ -72,7 +270,22 @@ namespace RdpBotClientApp
         [DllImport("user32.dll")]
         private static extern bool IsChild(IntPtr hWndParent, IntPtr hWnd);
 
-        private readonly string diagLogPath;
+        [DllImport("user32.dll")]
+        private static extern bool EnumChildWindows(IntPtr hWndParent, EnumChildProc lpEnumFunc, IntPtr lParam);
+
+        [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+        private static extern int GetClassName(IntPtr hWnd, StringBuilder lpClassName, int nMaxCount);
+
+        [DllImport("user32.dll")]
+        private static extern bool GetWindowRect(IntPtr hWnd, out RECT lpRect);
+
+        [DllImport("user32.dll")]
+        private static extern bool IsWindowVisible(IntPtr hWnd);
+
+        [DllImport("user32.dll")]
+        private static extern bool PrintWindow(IntPtr hWnd, IntPtr hdcBlt, uint nFlags);
+
+        private readonly ClientLaunchOptions launchOptions;
         private readonly Panel toolbarPanel;
         private readonly Button btnFullscreen;
         private readonly Button btnRelativeMouse;
@@ -80,46 +293,58 @@ namespace RdpBotClientApp
         private readonly Label lblStatus;
         private readonly Panel rdpHostPanel;
 
+        private FullscreenBarForm fullscreenBar;
         private RdpAxControl rdpAx;
         private dynamic ocx;
         private dynamic adv;
         private IMsRdpExtendedSettings extSettings;
+        private IConnectionPoint eventConnectionPoint;
+        private int eventCookie = 0;
+        private RdpEventSink eventSink;
+
         private string activeClsid = "";
+        private int activeKeyboardHookMode = 0;
         private bool relativeMouseEnabled = true;
+        private bool? lastMouseModeRelative = null;
+        private string disconnectNote = "";
         private bool fillWindowMode = true;
         private bool isFullScreen = false;
         private bool hotkeysRegistered = false;
+        private DateTime lastHotkeyToggleUtc = DateTime.MinValue;
+        private DateTime hintBarUntilUtc = DateTime.MinValue;
+        private DateTime barHideDeadlineUtc = DateTime.MinValue;
+
         private FormBorderStyle savedBorderStyle = FormBorderStyle.Sizable;
         private FormWindowState savedWindowState = FormWindowState.Maximized;
         private Rectangle savedBounds;
-        private Timer focusWatcher;
+        private Timer watcherTimer;
 
-        public RdpBotForm(string diagnosticsPath)
+        internal RdpBotForm(ClientLaunchOptions options)
         {
-            diagLogPath = diagnosticsPath;
+            launchOptions = options ?? new ClientLaunchOptions();
 
             Text = "BotUser (960x600) - Sessao RDP";
             BackColor = Color.Black;
+            AutoScaleMode = AutoScaleMode.None;
             StartPosition = FormStartPosition.Manual;
-            WindowState = FormWindowState.Maximized;
             MinimumSize = new Size(480, 340);
             KeyPreview = true;
 
             toolbarPanel = new Panel
             {
                 Dock = DockStyle.Top,
-                Height = ToolbarHeight,
+                Height = 32,
                 BackColor = Color.FromArgb(24, 24, 28),
-                Padding = new Padding(6, 3, 6, 3)
+                Padding = new Padding(6, 4, 6, 4)
             };
 
-            btnFullscreen = CreateToolbarButton("Tela Cheia (Ctrl+Alt+Enter)", 185);
+            btnFullscreen = CreateToolbarButton("Tela Cheia (Ctrl+Alt+Enter)", Color.FromArgb(46, 50, 60));
             btnFullscreen.Click += delegate { ToggleFullScreen(); };
 
-            btnRelativeMouse = CreateToolbarButton("Mouse Relativo: ON (Ctrl+Alt+M)", 215);
+            btnRelativeMouse = CreateToolbarButton("Mouse Relativo: ON (Ctrl+Alt+M)", Color.FromArgb(38, 108, 68));
             btnRelativeMouse.Click += delegate { ToggleRelativeMouse(); };
 
-            btnScaleMode = CreateToolbarButton("Escala: Preencher", 130);
+            btnScaleMode = CreateToolbarButton("Escala: Preencher", Color.FromArgb(46, 50, 60));
             btnScaleMode.Click += delegate { ToggleScaleMode(); };
 
             lblStatus = new Label
@@ -157,20 +382,43 @@ namespace RdpBotClientApp
             Controls.Add(rdpHostPanel);
             Controls.Add(toolbarPanel);
 
+            savedBorderStyle = FormBorderStyle.Sizable;
+            savedWindowState = FormWindowState.Maximized;
+            savedBounds = Screen.PrimaryScreen.WorkingArea;
+
+            if (launchOptions.StartWindowed)
+            {
+                isFullScreen = false;
+                FormBorderStyle = FormBorderStyle.Sizable;
+                WindowState = FormWindowState.Maximized;
+                toolbarPanel.Visible = true;
+            }
+            else
+            {
+                isFullScreen = true;
+                toolbarPanel.Visible = false;
+                FormBorderStyle = FormBorderStyle.None;
+                WindowState = FormWindowState.Normal;
+                Bounds = Screen.PrimaryScreen.Bounds;
+            }
+
             Load += OnFormLoad;
+            Resize += OnFormResize;
             FormClosing += OnFormClosing;
         }
 
-        private static Button CreateToolbarButton(string text, int width)
+        private static Button CreateToolbarButton(string text, Color backColor)
         {
             return new Button
             {
                 Text = text,
-                Width = width,
-                Height = 23,
+                AutoSize = true,
+                AutoSizeMode = AutoSizeMode.GrowAndShrink,
+                MinimumSize = new Size(90, 24),
+                Padding = new Padding(8, 0, 8, 0),
                 FlatStyle = FlatStyle.Flat,
                 ForeColor = Color.White,
-                BackColor = Color.FromArgb(46, 50, 60),
+                BackColor = backColor,
                 Font = new Font("Segoe UI", 8.2f),
                 Margin = new Padding(0, 0, 6, 0),
                 TabStop = false
@@ -179,23 +427,45 @@ namespace RdpBotClientApp
 
         private void OnFormLoad(object sender, EventArgs e)
         {
+            EnsureFullscreenBar();
+            if (isFullScreen)
+            {
+                SetFullScreen(true, false);
+            }
+
             InitializeRdpControl();
             UpdateButtonsAndStatus();
 
-            focusWatcher = new Timer { Interval = 250 };
-            focusWatcher.Tick += delegate { SyncHotkeysWithForeground(); };
-            focusWatcher.Start();
+            watcherTimer = new Timer { Interval = 120 };
+            watcherTimer.Tick += delegate { OnWatcherTick(); };
+            watcherTimer.Start();
 
-            if (!string.IsNullOrEmpty(diagLogPath))
+            if (!string.IsNullOrEmpty(launchOptions.DiagnosticsPath) ||
+                !string.IsNullOrEmpty(launchOptions.SoftwareCaptureFullscreenPath))
             {
-                var diagTimer = new Timer { Interval = 4500 };
-                diagTimer.Tick += delegate
-                {
-                    diagTimer.Stop();
-                    WriteDiagnostics();
-                };
-                diagTimer.Start();
+                StartAutomatedTestSequence();
             }
+        }
+
+        private void OnFormResize(object sender, EventArgs e)
+        {
+            if (WindowState == FormWindowState.Minimized && fullscreenBar != null && fullscreenBar.Visible)
+            {
+                fullscreenBar.Hide();
+            }
+            LayoutRdpControl();
+        }
+
+        private void EnsureFullscreenBar()
+        {
+            if (fullscreenBar != null && !fullscreenBar.IsDisposed) return;
+            fullscreenBar = new FullscreenBarForm { Owner = this };
+            fullscreenBar.RequestWindowed += delegate { SetFullScreen(false, true); };
+            fullscreenBar.RequestToggleRelativeMouse += delegate { ToggleRelativeMouse(); };
+            fullscreenBar.RequestToggleScaleMode += delegate { ToggleScaleMode(); };
+            fullscreenBar.RequestMinimize += delegate { MinimizeClient(); };
+            fullscreenBar.RequestCloseApp += delegate { Close(); };
+            fullscreenBar.SyncState(relativeMouseEnabled, fillWindowMode);
         }
 
         private void InitializeRdpControl()
@@ -238,8 +508,28 @@ namespace RdpBotClientApp
                 return;
             }
 
+            AttachRdpEventSink();
             LayoutRdpControl();
             ConfigureAndConnect();
+        }
+
+        private void AttachRdpEventSink()
+        {
+            try
+            {
+                var cpc = ocx as IConnectionPointContainer;
+                if (cpc == null) return;
+                Guid evGuid = typeof(IMsTscAxEvents).GUID;
+                IConnectionPoint cp;
+                cpc.FindConnectionPoint(ref evGuid, out cp);
+                if (cp == null) return;
+                eventSink = new RdpEventSink(this);
+                int cookie;
+                cp.Advise(eventSink, out cookie);
+                eventConnectionPoint = cp;
+                eventCookie = cookie;
+            }
+            catch { }
         }
 
         private void ConfigureAndConnect()
@@ -266,7 +556,7 @@ namespace RdpBotClientApp
             {
                 TrySet(() => adv.EnableCredSspSupport = false);
                 TrySet(() => adv.AuthenticationLevel = 0);
-                TrySet(() => adv.NegotiateSecurityLayer = false);
+                TrySet(() => adv.NegotiateSecurityLayer = 0);
                 TrySet(() => adv.EnableAutoReconnect = true);
                 TrySet(() => adv.MaxReconnectAttempts = 5);
                 TrySet(() => adv.BitmapPeristence = 0);
@@ -287,7 +577,11 @@ namespace RdpBotClientApp
             }
 
             TrySet(() => { ocx.SecuredSettings2.AudioRedirectionMode = 2; });
-            TrySet(() => { ocx.SecuredSettings2.KeyboardHookMode = 1; });
+            TrySet(() =>
+            {
+                ocx.SecuredSettings2.KeyboardHookMode = 0;
+                activeKeyboardHookMode = (int)ocx.SecuredSettings2.KeyboardHookMode;
+            });
 
             extSettings = ocx as IMsRdpExtendedSettings;
             if (extSettings != null)
@@ -296,11 +590,72 @@ namespace RdpBotClientApp
                 SetExtProperty("HighResolutionMouse", true);
                 SetExtProperty("High Resolution Mouse", true);
                 SetExtProperty("IgnoreServerGeneratedMouseMoves", false);
-                SetExtProperty("DynamicResolution", false);
                 SetExtProperty("EnableZoom", true);
+                if (!string.IsNullOrEmpty(launchOptions.SoftwareCaptureFullscreenPath))
+                {
+                    SetExtProperty("EnableHardwareMode", false);
+                }
             }
 
             ocx.Connect();
+        }
+
+        internal void HandleRdpConnected()
+        {
+            if (IsDisposed) return;
+            BeginInvoke((MethodInvoker)delegate
+            {
+                disconnectNote = "";
+                if (adv != null)
+                {
+                    TrySet(() => adv.RelativeMouseMode = relativeMouseEnabled);
+                    TrySet(() => adv.SmartSizing = true);
+                }
+                if (isFullScreen && string.IsNullOrEmpty(launchOptions.SoftwareCaptureFullscreenPath))
+                {
+                    hintBarUntilUtc = DateTime.UtcNow.AddSeconds(3);
+                    ShowFullscreenBar();
+                }
+                UpdateButtonsAndStatus();
+            });
+        }
+
+        internal void HandleRdpDisconnected(int discReason)
+        {
+            if (IsDisposed) return;
+            BeginInvoke((MethodInvoker)delegate
+            {
+                disconnectNote = "Desconectado (codigo " + discReason + ")";
+                UpdateButtonsAndStatus();
+            });
+        }
+
+        internal void HandleRdpRequestToggleFullScreen()
+        {
+            if (IsDisposed) return;
+            BeginInvoke((MethodInvoker)delegate
+            {
+                DateTime now = DateTime.UtcNow;
+                if ((now - lastHotkeyToggleUtc).TotalMilliseconds < 300) return;
+                lastHotkeyToggleUtc = now;
+                ToggleFullScreen();
+            });
+        }
+
+        internal void HandleRdpRequestMinimize()
+        {
+            if (IsDisposed) return;
+            BeginInvoke((MethodInvoker)delegate { MinimizeClient(); });
+        }
+
+        internal void HandleRdpMouseInputModeChanged(bool fMouseModeRelative)
+        {
+            if (IsDisposed) return;
+            BeginInvoke((MethodInvoker)delegate
+            {
+                lastMouseModeRelative = fMouseModeRelative;
+                UpdateButtonsAndStatus();
+            });
         }
 
         private void SetExtProperty(string name, object val)
@@ -361,31 +716,64 @@ namespace RdpBotClientApp
 
         private void ToggleFullScreen()
         {
-            if (!isFullScreen)
-            {
-                savedBorderStyle = FormBorderStyle;
-                savedWindowState = WindowState;
-                savedBounds = Bounds;
+            SetFullScreen(!isFullScreen, true);
+        }
 
+        private void SetFullScreen(bool enable, bool focusRdp)
+        {
+            if (enable)
+            {
+                if (!isFullScreen)
+                {
+                    savedBorderStyle = FormBorderStyle;
+                    savedWindowState = WindowState;
+                    if (WindowState == FormWindowState.Normal)
+                    {
+                        savedBounds = Bounds;
+                    }
+                }
+                Rectangle scr = Screen.FromControl(this).Bounds;
                 toolbarPanel.Visible = false;
                 FormBorderStyle = FormBorderStyle.None;
                 WindowState = FormWindowState.Normal;
-                Bounds = Screen.FromControl(this).Bounds;
+                Bounds = scr;
                 isFullScreen = true;
+                if (fullscreenBar != null && !fullscreenBar.IsDisposed)
+                {
+                    fullscreenBar.PositionAtTopCenter(scr);
+                }
             }
             else
             {
                 isFullScreen = false;
+                if (fullscreenBar != null && !fullscreenBar.IsDisposed && fullscreenBar.Visible)
+                {
+                    fullscreenBar.Hide();
+                }
                 FormBorderStyle = savedBorderStyle;
                 toolbarPanel.Visible = true;
                 WindowState = savedWindowState;
-                if (savedWindowState == FormWindowState.Normal && savedBounds.Width > 0)
+                if (savedWindowState == FormWindowState.Normal && savedBounds.Width > 0 && savedBounds.Height > 0)
                 {
                     Bounds = savedBounds;
                 }
             }
+
+            rdpHostPanel.PerformLayout();
             LayoutRdpControl();
-            FocusRdpHost();
+            if (focusRdp)
+            {
+                FocusRdpHost();
+            }
+        }
+
+        private void MinimizeClient()
+        {
+            if (fullscreenBar != null && !fullscreenBar.IsDisposed && fullscreenBar.Visible)
+            {
+                fullscreenBar.Hide();
+            }
+            WindowState = FormWindowState.Minimized;
         }
 
         private void ToggleRelativeMouse()
@@ -434,25 +822,72 @@ namespace RdpBotClientApp
             if (btnFullscreen != null)
             {
                 btnFullscreen.Text = isFullScreen
-                    ? "Sair Tela Cheia (Ctrl+Alt+Enter)"
+                    ? "Janela (Ctrl+Alt+Enter)"
                     : "Tela Cheia (Ctrl+Alt+Enter)";
+            }
+            if (fullscreenBar != null && !fullscreenBar.IsDisposed)
+            {
+                fullscreenBar.SyncState(relativeMouseEnabled, fillWindowMode);
+                if (fullscreenBar.Visible)
+                {
+                    fullscreenBar.PositionAtTopCenter(Screen.FromControl(this).Bounds);
+                }
             }
             if (lblStatus != null && rdpAx != null)
             {
-                lblStatus.Text = string.Format("Interno: {0}x{1} -> Janela: {2}x{3} | Ctrl+Alt+\\ libera mouse",
-                    RemoteWidth, RemoteHeight, rdpAx.Width, rdpAx.Height);
+                if (!string.IsNullOrEmpty(disconnectNote))
+                {
+                    lblStatus.Text = disconnectNote;
+                }
+                else
+                {
+                    string relState = lastMouseModeRelative.HasValue
+                        ? (lastMouseModeRelative.Value ? "Captura Relativa ATIVA" : "Cursor Normal")
+                        : "Ctrl+Alt+\\ libera mouse";
+                    lblStatus.Text = string.Format("Interno: {0}x{1} -> Janela: {2}x{3} | {4}",
+                        RemoteWidth, RemoteHeight, rdpAx.Width, rdpAx.Height, relState);
+                }
             }
+        }
+
+        private bool IsAppForeground()
+        {
+            if (!IsHandleCreated || IsDisposed) return false;
+            IntPtr fg = GetForegroundWindow();
+            if (fg == IntPtr.Zero) return false;
+            if (fg == Handle || IsChild(Handle, fg)) return true;
+            if (fullscreenBar != null && !fullscreenBar.IsDisposed && fullscreenBar.IsHandleCreated)
+            {
+                if (fg == fullscreenBar.Handle || IsChild(fullscreenBar.Handle, fg)) return true;
+            }
+            return false;
+        }
+
+        private void ShowFullscreenBar()
+        {
+            if (!isFullScreen || WindowState == FormWindowState.Minimized) return;
+            EnsureFullscreenBar();
+            fullscreenBar.PositionAtTopCenter(Screen.FromControl(this).Bounds);
+            if (!fullscreenBar.Visible)
+            {
+                fullscreenBar.Show(this);
+            }
+        }
+
+        private void OnWatcherTick()
+        {
+            SyncHotkeysWithForeground();
+            UpdateFullscreenBarAutoHide();
         }
 
         private void SyncHotkeysWithForeground()
         {
             if (!IsHandleCreated || IsDisposed) return;
-            IntPtr fg = GetForegroundWindow();
-            bool activeHere = (fg == Handle) || (fg != IntPtr.Zero && IsChild(Handle, fg));
+            bool activeHere = IsAppForeground() && WindowState != FormWindowState.Minimized;
             if (activeHere && !hotkeysRegistered)
             {
-                bool ok1 = RegisterHotKey(Handle, HotkeyFullscreenId, ModControlAlt, (uint)Keys.Return);
-                bool ok2 = RegisterHotKey(Handle, HotkeyRelativeMouseId, ModControlAlt, (uint)Keys.M);
+                bool ok1 = RegisterHotKey(Handle, HotkeyFullscreenId, ModControlAltNoRepeat, (uint)Keys.Return);
+                bool ok2 = RegisterHotKey(Handle, HotkeyRelativeMouseId, ModControlAltNoRepeat, (uint)Keys.M);
                 hotkeysRegistered = ok1 || ok2;
             }
             else if (!activeHere && hotkeysRegistered)
@@ -460,6 +895,35 @@ namespace RdpBotClientApp
                 UnregisterHotKey(Handle, HotkeyFullscreenId);
                 UnregisterHotKey(Handle, HotkeyRelativeMouseId);
                 hotkeysRegistered = false;
+            }
+        }
+
+        private void UpdateFullscreenBarAutoHide()
+        {
+            if (fullscreenBar == null || fullscreenBar.IsDisposed) return;
+            if (!isFullScreen || WindowState == FormWindowState.Minimized || !IsAppForeground())
+            {
+                if (fullscreenBar.Visible) fullscreenBar.Hide();
+                return;
+            }
+
+            Rectangle scr = Screen.FromControl(this).Bounds;
+            Point cur = Cursor.Position;
+            int barLeft = scr.Left + Math.Max(0, (scr.Width - fullscreenBar.Width) / 2);
+            int barRight = barLeft + fullscreenBar.Width;
+            bool inTopTrigger = cur.Y <= scr.Top + 4 && cur.X >= barLeft - 60 && cur.X <= barRight + 60;
+            bool onBarArea = fullscreenBar.Visible && cur.Y <= scr.Top + fullscreenBar.Height + 12 &&
+                             cur.X >= barLeft - 24 && cur.X <= barRight + 24;
+            bool inInitialHint = DateTime.UtcNow < hintBarUntilUtc;
+
+            if (inTopTrigger || onBarArea || inInitialHint)
+            {
+                barHideDeadlineUtc = DateTime.UtcNow.AddMilliseconds(400);
+                ShowFullscreenBar();
+            }
+            else if (fullscreenBar.Visible && DateTime.UtcNow >= barHideDeadlineUtc)
+            {
+                fullscreenBar.Hide();
             }
         }
 
@@ -497,37 +961,147 @@ namespace RdpBotClientApp
             base.WndProc(ref m);
         }
 
-        private void WriteDiagnostics()
+        private void StartAutomatedTestSequence()
+        {
+            var timer = new Timer { Interval = 5000 };
+            int phase = 0;
+            timer.Tick += delegate
+            {
+                phase++;
+                if (phase == 1)
+                {
+                    WriteDiagnostics("Initial", false);
+                    if (!string.IsNullOrEmpty(launchOptions.SoftwareCaptureFullscreenPath))
+                    {
+                        CaptureFormPng(launchOptions.SoftwareCaptureFullscreenPath);
+                    }
+
+                    if (!string.IsNullOrEmpty(launchOptions.SoftwareCaptureWindowedPath))
+                    {
+                        SetFullScreen(false, true);
+                        timer.Interval = 1200;
+                        return;
+                    }
+
+                    timer.Stop();
+                    return;
+                }
+
+                if (phase == 2)
+                {
+                    timer.Stop();
+                    WriteDiagnostics("Windowed", true);
+                    CaptureFormPng(launchOptions.SoftwareCaptureWindowedPath);
+                    Close();
+                }
+            };
+            timer.Start();
+        }
+
+        private void CaptureFormPng(string outPath)
         {
             try
             {
+                string dir = Path.GetDirectoryName(outPath);
+                if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir)) Directory.CreateDirectory(dir);
+                int w = Math.Max(1, Width);
+                int h = Math.Max(1, Height);
+                using (var bmp = new Bitmap(w, h, PixelFormat.Format32bppArgb))
+                {
+                    using (var g = Graphics.FromImage(bmp))
+                    {
+                        IntPtr hdc = g.GetHdc();
+                        PrintWindow(Handle, hdc, 2);
+                        g.ReleaseHdc(hdc);
+                    }
+                    bmp.Save(outPath, ImageFormat.Png);
+                }
+            }
+            catch { }
+        }
+
+        private string FindChildOutputPainterRect()
+        {
+            if (!IsHandleCreated) return "no-handle";
+            var found = new List<string>();
+            EnumChildWindows(Handle, (ch, lp) =>
+            {
+                var sb = new StringBuilder(128);
+                GetClassName(ch, sb, 128);
+                string cls = sb.ToString();
+                if (cls == "OPWindowClass" || cls == "OPContainerClass" || cls == "IHWindowClass")
+                {
+                    RECT r;
+                    GetWindowRect(ch, out r);
+                    found.Add(string.Format("{0}[vis={1}]:{2}x{3}", cls, IsWindowVisible(ch), r.Right - r.Left, r.Bottom - r.Top));
+                }
+                return true;
+            }, IntPtr.Zero);
+            return found.Count > 0 ? string.Join(", ", found.ToArray()) : "none";
+        }
+
+        private void WriteDiagnostics(string section, bool append)
+        {
+            if (string.IsNullOrEmpty(launchOptions.DiagnosticsPath)) return;
+            try
+            {
+                string dir = Path.GetDirectoryName(launchOptions.DiagnosticsPath);
+                if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir)) Directory.CreateDirectory(dir);
+
                 var lines = new List<string>();
+                lines.Add("=== " + section + " ===");
                 lines.Add("CLSID=" + activeClsid);
+                lines.Add("IsFullScreen=" + isFullScreen);
+                lines.Add("WindowState=" + WindowState);
                 lines.Add("FormBounds=" + Bounds.Width + "x" + Bounds.Height);
                 lines.Add("RdpAxBounds=" + (rdpAx != null ? (rdpAx.Width + "x" + rdpAx.Height) : "null"));
+                lines.Add("ChildWindows=" + FindChildOutputPainterRect());
                 try { lines.Add("Connected=" + ocx.Connected); } catch (Exception ex) { lines.Add("ConnectedErr=" + ex.Message); }
                 try { lines.Add("SmartSizing=" + adv.SmartSizing); } catch (Exception ex) { lines.Add("SmartSizingErr=" + ex.Message); }
                 try { lines.Add("RelativeMouseMode=" + adv.RelativeMouseMode); } catch (Exception ex) { lines.Add("RelativeMouseModeErr=" + ex.Message); }
+                lines.Add("KeyboardHookMode=" + activeKeyboardHookMode);
+                lines.Add("HotkeysRegistered=" + hotkeysRegistered);
+                lines.Add("MouseInputModeRelative=" + (lastMouseModeRelative.HasValue ? lastMouseModeRelative.Value.ToString() : "unset"));
                 lines.Add("ExtAllowRelativeMouseMode=" + GetExtProperty("AllowRelativeMouseMode"));
+                lines.Add("ExtEnableHardwareMode=" + GetExtProperty("EnableHardwareMode"));
                 lines.Add("ExtZoomLevel=" + GetExtProperty("ZoomLevel"));
                 lines.Add("DesktopWidth=" + ocx.DesktopWidth + " DesktopHeight=" + ocx.DesktopHeight);
-                File.WriteAllLines(diagLogPath, lines.ToArray(), Encoding.UTF8);
+
+                if (append && File.Exists(launchOptions.DiagnosticsPath))
+                {
+                    File.AppendAllLines(launchOptions.DiagnosticsPath, lines.ToArray(), Encoding.UTF8);
+                }
+                else
+                {
+                    File.WriteAllLines(launchOptions.DiagnosticsPath, lines.ToArray(), Encoding.UTF8);
+                }
             }
             catch { }
         }
 
         private void OnFormClosing(object sender, FormClosingEventArgs e)
         {
-            if (focusWatcher != null)
+            if (watcherTimer != null)
             {
-                focusWatcher.Stop();
-                focusWatcher.Dispose();
+                watcherTimer.Stop();
+                watcherTimer.Dispose();
             }
             if (hotkeysRegistered && IsHandleCreated)
             {
                 UnregisterHotKey(Handle, HotkeyFullscreenId);
                 UnregisterHotKey(Handle, HotkeyRelativeMouseId);
                 hotkeysRegistered = false;
+            }
+            if (fullscreenBar != null && !fullscreenBar.IsDisposed)
+            {
+                fullscreenBar.Close();
+                fullscreenBar.Dispose();
+            }
+            if (eventConnectionPoint != null && eventCookie != 0)
+            {
+                try { eventConnectionPoint.Unadvise(eventCookie); } catch { }
+                eventCookie = 0;
+                eventConnectionPoint = null;
             }
             if (ocx != null)
             {
@@ -557,24 +1131,39 @@ namespace RdpBotClientApp
             }
         }
 
+        private static ClientLaunchOptions ParseArgs(string[] args)
+        {
+            var opts = new ClientLaunchOptions();
+            for (int i = 0; i < args.Length; i++)
+            {
+                string a = args[i];
+                if (string.Equals(a, "--windowed", StringComparison.OrdinalIgnoreCase))
+                {
+                    opts.StartWindowed = true;
+                }
+                else if (string.Equals(a, "--test-diagnostics", StringComparison.OrdinalIgnoreCase) && i + 1 < args.Length)
+                {
+                    opts.DiagnosticsPath = args[++i];
+                }
+                else if (string.Equals(a, "--test-software-capture", StringComparison.OrdinalIgnoreCase) && i + 1 < args.Length)
+                {
+                    opts.SoftwareCaptureFullscreenPath = args[++i];
+                }
+                else if (string.Equals(a, "--test-capture-windowed", StringComparison.OrdinalIgnoreCase) && i + 1 < args.Length)
+                {
+                    opts.SoftwareCaptureWindowedPath = args[++i];
+                }
+            }
+            return opts;
+        }
+
         [STAThread]
         public static void Main(string[] args)
         {
             EnableDpiAwareness();
             Application.EnableVisualStyles();
             Application.SetCompatibleTextRenderingDefault(false);
-
-            string diag = null;
-            for (int i = 0; i < args.Length - 1; i++)
-            {
-                if (args[i] == "--test-diagnostics")
-                {
-                    diag = args[i + 1];
-                    break;
-                }
-            }
-
-            Application.Run(new RdpBotForm(diag));
+            Application.Run(new RdpBotForm(ParseArgs(args)));
         }
     }
 }
