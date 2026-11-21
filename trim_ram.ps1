@@ -124,7 +124,7 @@ Get-Process -Name "RobloxPlayerBeta" -ErrorAction SilentlyContinue | ForEach-Obj
 
 # 3. Expurga memória inativa (Working Set)
 $targetNames = @(
-    "mstsc", "RobloxPlayerBeta", "node", "dwm", "explorer",
+    "mstsc", "RdpBotClient", "RobloxPlayerBeta", "node", "dwm", "explorer",
     "WindowsTerminal", "OpenConsole", "SearchHost", "StartMenuExperienceHost",
     "rdpclip", "sihost", "RuntimeBroker", "svchost"
 )

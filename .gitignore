@@ -1,5 +1,6 @@
 node_modules/
 dist/
+RdpBotClient.exe
 *.log
 *.dmp
 .DS_Store
