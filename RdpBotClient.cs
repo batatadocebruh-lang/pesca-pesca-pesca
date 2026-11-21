@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.ComponentModel;
+using System.Diagnostics;
 using System.Drawing;
 using System.Drawing.Imaging;
 using System.IO;
@@ -140,7 +141,7 @@ namespace RdpBotClientApp
             btnWindow = CreateBarButton("Janela (Ctrl+Alt+Enter)", Color.FromArgb(46, 52, 64));
             btnWindow.Click += delegate { if (RequestWindowed != null) RequestWindowed(this, EventArgs.Empty); };
 
-            btnRelativeMouse = CreateBarButton("Mouse Relativo: ON (Ctrl+Alt+M)", Color.FromArgb(38, 108, 68));
+            btnRelativeMouse = CreateBarButton("Mouse Relativo: OFF (Ctrl+Alt+\\ ou M)", Color.FromArgb(46, 52, 64));
             btnRelativeMouse.Click += delegate { if (RequestToggleRelativeMouse != null) RequestToggleRelativeMouse(this, EventArgs.Empty); };
 
             btnScaleMode = CreateBarButton("Escala: Preencher", Color.FromArgb(46, 52, 64));
@@ -189,14 +190,14 @@ namespace RdpBotClientApp
             }
         }
 
-        public void SyncState(bool relativeMouseEnabled, bool fillWindowMode)
+        public void SyncState(bool relativeMouseActive, bool fillWindowMode)
         {
-            btnRelativeMouse.Text = relativeMouseEnabled
-                ? "Mouse Relativo: ON (Ctrl+Alt+M)"
-                : "Mouse Relativo: OFF (Ctrl+Alt+M)";
-            btnRelativeMouse.BackColor = relativeMouseEnabled
+            btnRelativeMouse.Text = relativeMouseActive
+                ? "Mouse Relativo: ATIVO (Ctrl+Alt+\\ ou M)"
+                : "Mouse Relativo: OFF (Ctrl+Alt+\\ ou M)";
+            btnRelativeMouse.BackColor = relativeMouseActive
                 ? Color.FromArgb(38, 108, 68)
-                : Color.FromArgb(88, 52, 52);
+                : Color.FromArgb(46, 52, 64);
 
             btnScaleMode.Text = fillWindowMode ? "Escala: Preencher" : "Escala: 16:10";
             RecalcLayout();
@@ -222,6 +223,7 @@ namespace RdpBotClientApp
     internal sealed class ClientLaunchOptions
     {
         public bool StartWindowed;
+        public bool TestToggleRelative;
         public string DiagnosticsPath;
         public string SoftwareCaptureFullscreenPath;
         public string SoftwareCaptureWindowedPath;
@@ -234,8 +236,19 @@ namespace RdpBotClientApp
         private const int PerfDisableBase = 0x0F;
         private const uint ModControlAltNoRepeat = 0x0001 | 0x0002 | 0x4000;
         private const int HotkeyFullscreenId = 101;
-        private const int HotkeyRelativeMouseId = 102;
+        private const int HotkeyRelativeMouseMId = 102;
+        private const int HotkeyRelativeMouseBackslashId = 103;
         private const int WmHotkey = 0x0312;
+        private const int WmKeyDown = 0x0100;
+        private const int WmSysKeyDown = 0x0104;
+        private const uint VkControl = 0x11;
+        private const uint VkLControl = 0xA2;
+        private const uint VkMenu = 0x12;
+        private const uint VkLMenu = 0xA4;
+        private const uint VkOem5 = 0xDC;
+        private const uint VkOem102 = 0xE2;
+        private const uint RidevCaptureMouse = 0x00000200;
+        private const uint RidevNoHotKeysOrNoLegacy = 0x00000030;
 
         private static readonly string[] CandidateClsids = new[]
         {
@@ -248,6 +261,15 @@ namespace RdpBotClientApp
         private struct RECT
         {
             public int Left, Top, Right, Bottom;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct RAWINPUTDEVICE
+        {
+            public ushort usUsagePage;
+            public ushort usUsage;
+            public uint dwFlags;
+            public IntPtr hwndTarget;
         }
 
         private delegate bool EnumChildProc(IntPtr hWnd, IntPtr lParam);
@@ -285,6 +307,33 @@ namespace RdpBotClientApp
         [DllImport("user32.dll")]
         private static extern bool PrintWindow(IntPtr hWnd, IntPtr hdcBlt, uint nFlags);
 
+        [DllImport("user32.dll", SetLastError = true)]
+        private static extern uint GetRegisteredRawInputDevices([Out] RAWINPUTDEVICE[] pRawInputDevices, ref uint puiNumDevices, uint cbSize);
+
+        [DllImport("user32.dll")]
+        private static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint lpdwProcessId);
+
+        [DllImport("kernel32.dll")]
+        private static extern uint GetCurrentThreadId();
+
+        [DllImport("user32.dll")]
+        private static extern bool AttachThreadInput(uint idAttach, uint idAttachTo, bool fAttach);
+
+        [DllImport("user32.dll")]
+        private static extern bool GetKeyboardState(byte[] lpKeyState);
+
+        [DllImport("user32.dll")]
+        private static extern bool SetKeyboardState(byte[] lpKeyState);
+
+        [DllImport("user32.dll")]
+        private static extern uint MapVirtualKey(uint uCode, uint uMapType);
+
+        [DllImport("user32.dll")]
+        private static extern IntPtr SendMessage(IntPtr hWnd, uint Msg, IntPtr wParam, IntPtr lParam);
+
+        [DllImport("user32.dll")]
+        private static extern IntPtr SetFocus(IntPtr hWnd);
+
         private readonly ClientLaunchOptions launchOptions;
         private readonly Panel toolbarPanel;
         private readonly Button btnFullscreen;
@@ -304,7 +353,7 @@ namespace RdpBotClientApp
 
         private string activeClsid = "";
         private int activeKeyboardHookMode = 0;
-        private bool relativeMouseEnabled = true;
+        private bool relativeMouseActive = false;
         private bool? lastMouseModeRelative = null;
         private string disconnectNote = "";
         private bool fillWindowMode = true;
@@ -313,6 +362,10 @@ namespace RdpBotClientApp
         private DateTime lastHotkeyToggleUtc = DateTime.MinValue;
         private DateTime hintBarUntilUtc = DateTime.MinValue;
         private DateTime barHideDeadlineUtc = DateTime.MinValue;
+
+        private string testRelBefore = "unset";
+        private string testRelAfterOn = "unset";
+        private string testRelAfterOff = "unset";
 
         private FormBorderStyle savedBorderStyle = FormBorderStyle.Sizable;
         private FormWindowState savedWindowState = FormWindowState.Maximized;
@@ -341,8 +394,8 @@ namespace RdpBotClientApp
             btnFullscreen = CreateToolbarButton("Tela Cheia (Ctrl+Alt+Enter)", Color.FromArgb(46, 50, 60));
             btnFullscreen.Click += delegate { ToggleFullScreen(); };
 
-            btnRelativeMouse = CreateToolbarButton("Mouse Relativo: ON (Ctrl+Alt+M)", Color.FromArgb(38, 108, 68));
-            btnRelativeMouse.Click += delegate { ToggleRelativeMouse(); };
+            btnRelativeMouse = CreateToolbarButton("Mouse Relativo: OFF (Ctrl+Alt+\\ ou M)", Color.FromArgb(46, 50, 60));
+            btnRelativeMouse.Click += delegate { ToggleNativeRelativeMouse(true); };
 
             btnScaleMode = CreateToolbarButton("Escala: Preencher", Color.FromArgb(46, 50, 60));
             btnScaleMode.Click += delegate { ToggleScaleMode(); };
@@ -441,7 +494,8 @@ namespace RdpBotClientApp
             watcherTimer.Start();
 
             if (!string.IsNullOrEmpty(launchOptions.DiagnosticsPath) ||
-                !string.IsNullOrEmpty(launchOptions.SoftwareCaptureFullscreenPath))
+                !string.IsNullOrEmpty(launchOptions.SoftwareCaptureFullscreenPath) ||
+                launchOptions.TestToggleRelative)
             {
                 StartAutomatedTestSequence();
             }
@@ -461,11 +515,11 @@ namespace RdpBotClientApp
             if (fullscreenBar != null && !fullscreenBar.IsDisposed) return;
             fullscreenBar = new FullscreenBarForm { Owner = this };
             fullscreenBar.RequestWindowed += delegate { SetFullScreen(false, true); };
-            fullscreenBar.RequestToggleRelativeMouse += delegate { ToggleRelativeMouse(); };
+            fullscreenBar.RequestToggleRelativeMouse += delegate { ToggleNativeRelativeMouse(true); };
             fullscreenBar.RequestToggleScaleMode += delegate { ToggleScaleMode(); };
             fullscreenBar.RequestMinimize += delegate { MinimizeClient(); };
             fullscreenBar.RequestCloseApp += delegate { Close(); };
-            fullscreenBar.SyncState(relativeMouseEnabled, fillWindowMode);
+            fullscreenBar.SyncState(relativeMouseActive, fillWindowMode);
         }
 
         private void InitializeRdpControl()
@@ -572,7 +626,7 @@ namespace RdpBotClientApp
                 TrySet(() => adv.ContainerHandledFullScreen = 1);
                 TrySet(() => adv.GrabFocusOnConnect = true);
                 TrySet(() => adv.SmartSizing = true);
-                TrySet(() => adv.RelativeMouseMode = relativeMouseEnabled);
+                TrySet(() => adv.RelativeMouseMode = false);
                 TrySet(() => adv.NetworkConnectionType = 6u);
             }
 
@@ -608,10 +662,12 @@ namespace RdpBotClientApp
                 disconnectNote = "";
                 if (adv != null)
                 {
-                    TrySet(() => adv.RelativeMouseMode = relativeMouseEnabled);
+                    TrySet(() => adv.RelativeMouseMode = false);
                     TrySet(() => adv.SmartSizing = true);
                 }
-                if (isFullScreen && string.IsNullOrEmpty(launchOptions.SoftwareCaptureFullscreenPath))
+                SetExtProperty("AllowRelativeMouseMode", true);
+                relativeMouseActive = IsNativeRelativeMouseCaptured();
+                if (isFullScreen && string.IsNullOrEmpty(launchOptions.SoftwareCaptureFullscreenPath) && !launchOptions.TestToggleRelative)
                 {
                     hintBarUntilUtc = DateTime.UtcNow.AddSeconds(3);
                     ShowFullscreenBar();
@@ -626,6 +682,7 @@ namespace RdpBotClientApp
             BeginInvoke((MethodInvoker)delegate
             {
                 disconnectNote = "Desconectado (codigo " + discReason + ")";
+                relativeMouseActive = false;
                 UpdateButtonsAndStatus();
             });
         }
@@ -654,6 +711,7 @@ namespace RdpBotClientApp
             BeginInvoke((MethodInvoker)delegate
             {
                 lastMouseModeRelative = fMouseModeRelative;
+                relativeMouseActive = IsNativeRelativeMouseCaptured();
                 UpdateButtonsAndStatus();
             });
         }
@@ -684,6 +742,146 @@ namespace RdpBotClientApp
         private static void TrySet(Action action)
         {
             try { action(); } catch { }
+        }
+
+        private IntPtr FindInputHandlerWindow()
+        {
+            if (!IsHandleCreated || IsDisposed) return IntPtr.Zero;
+            IntPtr found = IntPtr.Zero;
+            EnumChildWindows(Handle, (ch, lp) =>
+            {
+                var sb = new StringBuilder(64);
+                GetClassName(ch, sb, 64);
+                if (sb.ToString() == "IHWindowClass")
+                {
+                    found = ch;
+                    return false;
+                }
+                return true;
+            }, IntPtr.Zero);
+            return found;
+        }
+
+        private bool IsNativeRelativeMouseCaptured()
+        {
+            try
+            {
+                uint count = 0;
+                uint cbSize = (uint)Marshal.SizeOf(typeof(RAWINPUTDEVICE));
+                GetRegisteredRawInputDevices(null, ref count, cbSize);
+                if (count == 0) return false;
+
+                var devices = new RAWINPUTDEVICE[count];
+                uint fetched = GetRegisteredRawInputDevices(devices, ref count, cbSize);
+                if (fetched == uint.MaxValue) return false;
+
+                IntPtr ihHwnd = FindInputHandlerWindow();
+                for (int i = 0; i < (int)Math.Min(fetched, (uint)devices.Length); i++)
+                {
+                    if (devices[i].usUsagePage == 1 && devices[i].usUsage == 2)
+                    {
+                        if ((devices[i].dwFlags & RidevCaptureMouse) != 0)
+                        {
+                            return true;
+                        }
+                        if (ihHwnd != IntPtr.Zero && devices[i].hwndTarget == ihHwnd &&
+                            (devices[i].dwFlags & RidevNoHotKeysOrNoLegacy) != 0)
+                        {
+                            return true;
+                        }
+                    }
+                }
+            }
+            catch { }
+            return false;
+        }
+
+        private void ToggleNativeRelativeMouse(bool fromButton)
+        {
+            if (fromButton)
+            {
+                FocusRdpHost();
+                var delayTimer = new Timer { Interval = 60 };
+                delayTimer.Tick += delegate
+                {
+                    delayTimer.Stop();
+                    delayTimer.Dispose();
+                    if (!IsDisposed)
+                    {
+                        ExecuteNativeRelativeMouseKeySequence();
+                    }
+                };
+                delayTimer.Start();
+                return;
+            }
+
+            ExecuteNativeRelativeMouseKeySequence();
+        }
+
+        private bool ExecuteNativeRelativeMouseKeySequence()
+        {
+            IntPtr ihHwnd = FindInputHandlerWindow();
+            if (ihHwnd == IntPtr.Zero) return false;
+
+            bool before = IsNativeRelativeMouseCaptured();
+            uint pid;
+            uint ihTid = GetWindowThreadProcessId(ihHwnd, out pid);
+            uint curTid = GetCurrentThreadId();
+            bool attached = false;
+
+            try
+            {
+                if (ihTid != 0 && ihTid != curTid)
+                {
+                    attached = AttachThreadInput(curTid, ihTid, true);
+                }
+
+                SetFocus(ihHwnd);
+
+                var savedState = new byte[256];
+                var tempState = new byte[256];
+                if (GetKeyboardState(savedState))
+                {
+                    Buffer.BlockCopy(savedState, 0, tempState, 0, 256);
+                }
+
+                tempState[VkControl] = (byte)(tempState[VkControl] | 0x80);
+                tempState[VkLControl] = (byte)(tempState[VkLControl] | 0x80);
+                tempState[VkMenu] = (byte)(tempState[VkMenu] | 0x80);
+                tempState[VkLMenu] = (byte)(tempState[VkLMenu] | 0x80);
+                tempState[VkOem5] = (byte)(tempState[VkOem5] | 0x80);
+
+                uint sc = MapVirtualKey(VkOem5, 0);
+                if (sc == 0) sc = 0x2B;
+
+                SetKeyboardState(tempState);
+                try
+                {
+                    IntPtr lParamKeyDown = (IntPtr)(int)((sc << 16) | 1u);
+                    SendMessage(ihHwnd, WmKeyDown, (IntPtr)VkOem5, lParamKeyDown);
+
+                    if (IsNativeRelativeMouseCaptured() == before)
+                    {
+                        IntPtr lParamSysKeyDown = (IntPtr)unchecked((int)(0x20000001u | (sc << 16)));
+                        SendMessage(ihHwnd, WmSysKeyDown, (IntPtr)VkOem5, lParamSysKeyDown);
+                    }
+                }
+                finally
+                {
+                    SetKeyboardState(savedState);
+                }
+            }
+            finally
+            {
+                if (attached)
+                {
+                    AttachThreadInput(curTid, ihTid, false);
+                }
+            }
+
+            relativeMouseActive = IsNativeRelativeMouseCaptured();
+            UpdateButtonsAndStatus();
+            return relativeMouseActive != before;
         }
 
         private void LayoutRdpControl()
@@ -776,17 +974,6 @@ namespace RdpBotClientApp
             WindowState = FormWindowState.Minimized;
         }
 
-        private void ToggleRelativeMouse()
-        {
-            relativeMouseEnabled = !relativeMouseEnabled;
-            if (adv != null)
-            {
-                TrySet(() => adv.RelativeMouseMode = relativeMouseEnabled);
-            }
-            UpdateButtonsAndStatus();
-            FocusRdpHost();
-        }
-
         private void ToggleScaleMode()
         {
             fillWindowMode = !fillWindowMode;
@@ -808,12 +995,12 @@ namespace RdpBotClientApp
         {
             if (btnRelativeMouse != null)
             {
-                btnRelativeMouse.Text = relativeMouseEnabled
-                    ? "Mouse Relativo: ON (Ctrl+Alt+M)"
-                    : "Mouse Relativo: OFF (Ctrl+Alt+M)";
-                btnRelativeMouse.BackColor = relativeMouseEnabled
+                btnRelativeMouse.Text = relativeMouseActive
+                    ? "Mouse Relativo: ATIVO (Ctrl+Alt+\\ ou M)"
+                    : "Mouse Relativo: OFF (Ctrl+Alt+\\ ou M)";
+                btnRelativeMouse.BackColor = relativeMouseActive
                     ? Color.FromArgb(38, 108, 68)
-                    : Color.FromArgb(72, 52, 52);
+                    : Color.FromArgb(46, 50, 60);
             }
             if (btnScaleMode != null)
             {
@@ -827,7 +1014,7 @@ namespace RdpBotClientApp
             }
             if (fullscreenBar != null && !fullscreenBar.IsDisposed)
             {
-                fullscreenBar.SyncState(relativeMouseEnabled, fillWindowMode);
+                fullscreenBar.SyncState(relativeMouseActive, fillWindowMode);
                 if (fullscreenBar.Visible)
                 {
                     fullscreenBar.PositionAtTopCenter(Screen.FromControl(this).Bounds);
@@ -841,11 +1028,9 @@ namespace RdpBotClientApp
                 }
                 else
                 {
-                    string relState = lastMouseModeRelative.HasValue
-                        ? (lastMouseModeRelative.Value ? "Captura Relativa ATIVA" : "Cursor Normal")
-                        : "Ctrl+Alt+\\ libera mouse";
-                    lblStatus.Text = string.Format("Interno: {0}x{1} -> Janela: {2}x{3} | {4}",
-                        RemoteWidth, RemoteHeight, rdpAx.Width, rdpAx.Height, relState);
+                    string modeLabel = relativeMouseActive ? "ATIVO" : "OFF";
+                    lblStatus.Text = string.Format("Interno: {0}x{1} -> Janela: {2}x{3} | Mouse Relativo ({4}): Ctrl+Alt+\\, Ctrl+Alt+M ou Ctrl+Alt+]",
+                        RemoteWidth, RemoteHeight, rdpAx.Width, rdpAx.Height, modeLabel);
                 }
             }
         }
@@ -877,6 +1062,12 @@ namespace RdpBotClientApp
         private void OnWatcherTick()
         {
             SyncHotkeysWithForeground();
+            bool liveCap = IsNativeRelativeMouseCaptured();
+            if (liveCap != relativeMouseActive)
+            {
+                relativeMouseActive = liveCap;
+                UpdateButtonsAndStatus();
+            }
             UpdateFullscreenBarAutoHide();
         }
 
@@ -887,13 +1078,15 @@ namespace RdpBotClientApp
             if (activeHere && !hotkeysRegistered)
             {
                 bool ok1 = RegisterHotKey(Handle, HotkeyFullscreenId, ModControlAltNoRepeat, (uint)Keys.Return);
-                bool ok2 = RegisterHotKey(Handle, HotkeyRelativeMouseId, ModControlAltNoRepeat, (uint)Keys.M);
-                hotkeysRegistered = ok1 || ok2;
+                bool ok2 = RegisterHotKey(Handle, HotkeyRelativeMouseMId, ModControlAltNoRepeat, (uint)Keys.M);
+                bool ok3 = RegisterHotKey(Handle, HotkeyRelativeMouseBackslashId, ModControlAltNoRepeat, VkOem102);
+                hotkeysRegistered = ok1 || ok2 || ok3;
             }
             else if (!activeHere && hotkeysRegistered)
             {
                 UnregisterHotKey(Handle, HotkeyFullscreenId);
-                UnregisterHotKey(Handle, HotkeyRelativeMouseId);
+                UnregisterHotKey(Handle, HotkeyRelativeMouseMId);
+                UnregisterHotKey(Handle, HotkeyRelativeMouseBackslashId);
                 hotkeysRegistered = false;
             }
         }
@@ -936,7 +1129,7 @@ namespace RdpBotClientApp
             }
             if (keyData == Keys.F9)
             {
-                ToggleRelativeMouse();
+                ToggleNativeRelativeMouse(false);
                 return true;
             }
             return base.ProcessCmdKey(ref msg, keyData);
@@ -952,9 +1145,9 @@ namespace RdpBotClientApp
                     ToggleFullScreen();
                     return;
                 }
-                if (id == HotkeyRelativeMouseId)
+                if (id == HotkeyRelativeMouseMId || id == HotkeyRelativeMouseBackslashId)
                 {
-                    ToggleRelativeMouse();
+                    ToggleNativeRelativeMouse(false);
                     return;
                 }
             }
@@ -968,6 +1161,33 @@ namespace RdpBotClientApp
             timer.Tick += delegate
             {
                 phase++;
+                if (launchOptions.TestToggleRelative)
+                {
+                    if (phase == 1)
+                    {
+                        FocusRdpHost();
+                        testRelBefore = IsNativeRelativeMouseCaptured().ToString();
+                        ToggleNativeRelativeMouse(false);
+                        timer.Interval = 500;
+                        return;
+                    }
+                    if (phase == 2)
+                    {
+                        testRelAfterOn = IsNativeRelativeMouseCaptured().ToString();
+                        ToggleNativeRelativeMouse(false);
+                        timer.Interval = 500;
+                        return;
+                    }
+                    if (phase == 3)
+                    {
+                        timer.Stop();
+                        testRelAfterOff = IsNativeRelativeMouseCaptured().ToString();
+                        WriteDiagnostics("ToggleRelativeTest", false);
+                        Close();
+                        return;
+                    }
+                }
+
                 if (phase == 1)
                 {
                     WriteDiagnostics("Initial", false);
@@ -1048,6 +1268,11 @@ namespace RdpBotClientApp
                 string dir = Path.GetDirectoryName(launchOptions.DiagnosticsPath);
                 if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir)) Directory.CreateDirectory(dir);
 
+                IntPtr ihHwnd = FindInputHandlerWindow();
+                uint ihPid = 0;
+                uint ihTid = ihHwnd != IntPtr.Zero ? GetWindowThreadProcessId(ihHwnd, out ihPid) : 0;
+                uint uiTid = GetCurrentThreadId();
+
                 var lines = new List<string>();
                 lines.Add("=== " + section + " ===");
                 lines.Add("CLSID=" + activeClsid);
@@ -1058,7 +1283,8 @@ namespace RdpBotClientApp
                 lines.Add("ChildWindows=" + FindChildOutputPainterRect());
                 try { lines.Add("Connected=" + ocx.Connected); } catch (Exception ex) { lines.Add("ConnectedErr=" + ex.Message); }
                 try { lines.Add("SmartSizing=" + adv.SmartSizing); } catch (Exception ex) { lines.Add("SmartSizingErr=" + ex.Message); }
-                try { lines.Add("RelativeMouseMode=" + adv.RelativeMouseMode); } catch (Exception ex) { lines.Add("RelativeMouseModeErr=" + ex.Message); }
+                try { lines.Add("AdvRelativeMouseMode=" + adv.RelativeMouseMode); } catch (Exception ex) { lines.Add("AdvRelativeMouseModeErr=" + ex.Message); }
+                lines.Add("NativeRelativeMouseCaptured=" + IsNativeRelativeMouseCaptured());
                 lines.Add("KeyboardHookMode=" + activeKeyboardHookMode);
                 lines.Add("HotkeysRegistered=" + hotkeysRegistered);
                 lines.Add("MouseInputModeRelative=" + (lastMouseModeRelative.HasValue ? lastMouseModeRelative.Value.ToString() : "unset"));
@@ -1066,6 +1292,12 @@ namespace RdpBotClientApp
                 lines.Add("ExtEnableHardwareMode=" + GetExtProperty("EnableHardwareMode"));
                 lines.Add("ExtZoomLevel=" + GetExtProperty("ZoomLevel"));
                 lines.Add("DesktopWidth=" + ocx.DesktopWidth + " DesktopHeight=" + ocx.DesktopHeight);
+                lines.Add("IHWindowHwnd=0x" + ihHwnd.ToInt64().ToString("X"));
+                lines.Add("IHThreadId=" + ihTid);
+                lines.Add("UiThreadId=" + uiTid);
+                lines.Add("RelBefore=" + testRelBefore);
+                lines.Add("RelAfterOn=" + testRelAfterOn);
+                lines.Add("RelAfterOff=" + testRelAfterOff);
 
                 if (append && File.Exists(launchOptions.DiagnosticsPath))
                 {
@@ -1089,7 +1321,8 @@ namespace RdpBotClientApp
             if (hotkeysRegistered && IsHandleCreated)
             {
                 UnregisterHotKey(Handle, HotkeyFullscreenId);
-                UnregisterHotKey(Handle, HotkeyRelativeMouseId);
+                UnregisterHotKey(Handle, HotkeyRelativeMouseMId);
+                UnregisterHotKey(Handle, HotkeyRelativeMouseBackslashId);
                 hotkeysRegistered = false;
             }
             if (fullscreenBar != null && !fullscreenBar.IsDisposed)
@@ -1140,6 +1373,10 @@ namespace RdpBotClientApp
                 if (string.Equals(a, "--windowed", StringComparison.OrdinalIgnoreCase))
                 {
                     opts.StartWindowed = true;
+                }
+                else if (string.Equals(a, "--test-toggle-relative", StringComparison.OrdinalIgnoreCase))
+                {
+                    opts.TestToggleRelative = true;
                 }
                 else if (string.Equals(a, "--test-diagnostics", StringComparison.OrdinalIgnoreCase) && i + 1 < args.Length)
                 {

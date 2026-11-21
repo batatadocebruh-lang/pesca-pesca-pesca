@@ -29,11 +29,11 @@ Antes de começar, certifique-se de ter no seu computador:
 
 Na sua sessão normal do Windows:
 
-1. Dê um duplo clique em **[`Conectar_RDP_BotUser.bat`](Conectar_RDP_BotUser.bat)** (ou no atalho **`Conectar_RDP_BotUser`** criado na Área de Trabalho). Ele compila/abre o cliente nativo [`RdpBotClient.cs`](RdpBotClient.cs) (`mstscax.dll`) já em **Tela Cheia adaptativa** para a resolução do seu monitor, mantendo a sessão interna fixa em `960x600` (para preservar a ROI) e o **Mouse Relativo** ativo para o Shift Lock do Roblox. *(Dica: [`Sessao_BotUser.rdp`](Sessao_BotUser.rdp) é apenas o perfil legado para o `mstsc.exe` padrão, que trava janelas maximizadas em `960x600` e não ativa mouse relativo em jogos desktop).*
+1. Dê um duplo clique em **[`Conectar_RDP_BotUser.bat`](Conectar_RDP_BotUser.bat)** (ou no atalho **`Conectar_RDP_BotUser`** criado na Área de Trabalho). Ele compila/abre o cliente nativo [`RdpBotClient.cs`](RdpBotClient.cs) (`mstscax.dll`) já em **Tela Cheia adaptativa** para a resolução do seu monitor, mantendo a sessão interna fixa em `960x600` (para preservar a ROI), e dispara o início automático minimizado do bot dentro da sessão (`IniciarBotPesca_BotUser` + [`Iniciar_Bot_Minimizado.vbs`](Iniciar_Bot_Minimizado.vbs)). *(Dica: [`Sessao_BotUser.rdp`](Sessao_BotUser.rdp) é apenas o perfil legado para o `mstsc.exe` padrão, que trava janelas maximizadas em `960x600` e não ativa mouse relativo em jogos desktop).*
    - **Atalhos da janela RDP (`RdpBotClient`):**
      - `Ctrl+Alt+Enter` ou `Ctrl+Alt+Break` — Alterna entre **Tela Cheia** e **Janela Maximizada** (ou mova o mouse para o topo central para abrir a barra flutuante).
-     - `Ctrl+Alt+M` — Liga/desliga **Mouse Relativo** (para câmera 360° / Shift Lock no Roblox).
-     - `Ctrl+Alt+\` — Libera/restaura a captura do cursor na sessão remota.
+     - `Ctrl+Alt+\`, `Ctrl+Alt+M` ou `Ctrl+Alt+]` — Ativa/desativa a entrada relativa nativa da `mstscax.dll` e libera/restaura a captura do cursor (corrigido para teclado brasileiro **ABNT2**, onde a `mstscax.dll` originalmente esperava `VK_OEM_5` = `]` em vez de `\`).
+     - **Fluxo com Shift Lock no Roblox:** ative o `Shift` dentro do Roblox e pressione `Ctrl+Alt+\` (ou `Ctrl+Alt+M` / `Ctrl+Alt+]`). *Observação técnica:* por limitação nativa da `mstscax.dll` em sessões desktop Windows comuns, caso o Roblox reenvie atualizações de cursor visível (ícone da trava) em vez de ocultar o cursor do sistema, a própria `mstscax.dll` desativa a captura relativa — nesse cenário específico de jogo 3D, soluções de streaming nativas de mouse relativo como Sunshine/Moonlight ou Parsec são alternativas limpas sem hooks externos.
      - Passe `--windowed` ao [`Conectar_RDP_BotUser.bat`](Conectar_RDP_BotUser.bat) se preferir abrir já em modo janela maximizada.
 2. Se pedir usuário e senha no primeiro logon:
    - **Usuário:** `BotUser` (ou `.\BotUser`)
@@ -46,7 +46,7 @@ Na sua sessão normal do Windows:
 
 Dentro da janela da sessão remota (`BotUser`):
 
-1. Na Área de Trabalho do `BotUser`, dê um duplo clique em **`Iniciar_Bot_Pesca.bat`** (ou abra `C:\pesca` e execute [`Iniciar_Bot.bat`](Iniciar_Bot.bat)).
+1. Ao conectar com `Conectar_RDP_BotUser`, o terminal de **`Iniciar_Bot_Pesca.bat`** já inicia **minimizado na barra de tarefas** da sessão do `BotUser` (sem cobrir a tela para não atrapalhar abrir o Roblox) e não abre cópias duplicadas se já houver um terminal/bot rodando na sessão. Caso precise reabrir manualmente após fechá-lo, dê um duplo clique em **`Iniciar_Bot_Pesca.bat`** na Área de Trabalho do `BotUser` (ou abra `C:\pesca` e execute [`Iniciar_Bot.bat`](Iniciar_Bot.bat)).
 2. Clique dentro da janela do Roblox (ou onde deseja executar o macro) e use os atalhos globais padrão:
 
 | Atalho Padrão | O que faz |

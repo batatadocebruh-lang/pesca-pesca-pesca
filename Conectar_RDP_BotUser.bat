@@ -25,5 +25,6 @@ if errorlevel 1 (
 )
 
 :run
+start "" /min cmd /c "schtasks /run /tn IniciarBotPesca_BotUser >nul 2>&1"
 start "" "%EXE%" %*
 endlocal

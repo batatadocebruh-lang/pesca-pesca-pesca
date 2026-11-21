@@ -136,6 +136,59 @@ function Update-RdpDomain {
     Write-Host "Arquivo RDP atualizado com domain:s:${ComputerName}: $FilePath"
 }
 
+function Register-BotStartScheduledTask {
+    param(
+        [string]$TaskName = "IniciarBotPesca_BotUser",
+        [string]$BotUserName = "BotUser",
+        [string]$VbsPath = "C:\pesca\Iniciar_Bot_Minimizado.vbs",
+        [string]$WorkingDirectory = "C:\pesca"
+    )
+
+    $botAccount = "$env:COMPUTERNAME\$BotUserName"
+    $service = New-Object -ComObject "Schedule.Service"
+    $service.Connect()
+
+    $rootFolder = $service.GetFolder("\")
+    $taskDef = $service.NewTask(0)
+    $taskDef.RegistrationInfo.Description = "Inicia o Bot Unificado (Pesca + Macros) minimizado na barra de tarefas na sessao do $BotUserName."
+
+    # Principal: BotUser, LogonType = 3 (TASK_LOGON_INTERACTIVE_TOKEN), RunLevel = 0 (LeastPrivilege)
+    $taskDef.Principal.UserId = $botAccount
+    $taskDef.Principal.LogonType = 3
+    $taskDef.Principal.RunLevel = 0
+
+    # Settings
+    $taskDef.Settings.Enabled = $true
+    $taskDef.Settings.AllowDemandStart = $true
+    $taskDef.Settings.DisallowStartIfOnBatteries = $false
+    $taskDef.Settings.StopIfGoingOnBatteries = $false
+    $taskDef.Settings.MultipleInstances = 2   # TASK_INSTANCES_IGNORE_NEW
+    $taskDef.Settings.ExecutionTimeLimit = "PT5M"
+
+    # Trigger 1: LogonTrigger (Type = 9) para primeiro logon do BotUser
+    $logonTrigger = $taskDef.Triggers.Create(9)
+    $logonTrigger.Id = "LogonBotUser"
+    $logonTrigger.UserId = $botAccount
+    $logonTrigger.Enabled = $true
+
+    # Trigger 2: SessionStateChangeTrigger (Type = 11, StateChange = 3 = TASK_SESSION_REMOTE_CONNECT)
+    $rdpTrigger = $taskDef.Triggers.Create(11)
+    $rdpTrigger.Id = "RemoteConnectBotUser"
+    $rdpTrigger.StateChange = 3
+    $rdpTrigger.UserId = $botAccount
+    $rdpTrigger.Enabled = $true
+
+    # Action: wscript.exe //B //Nologo "C:\pesca\Iniciar_Bot_Minimizado.vbs"
+    $action = $taskDef.Actions.Create(0)
+    $action.Path = "wscript.exe"
+    $action.Arguments = "//B //Nologo `"$VbsPath`""
+    $action.WorkingDirectory = $WorkingDirectory
+
+    # 6 = TASK_CREATE_OR_UPDATE, 3 = TASK_LOGON_INTERACTIVE_TOKEN
+    $rootFolder.RegisterTaskDefinition($TaskName, $taskDef, 6, $null, $null, 3) | Out-Null
+    Write-Host "Tarefa agendada '$TaskName' configurada (Logon + RemoteConnect) para $botAccount."
+}
+
 try {
     Write-Host "=== [1/5] Configurando usuario BotUser e permissoes ==="
     $secPass = ConvertTo-SecureString "123" -AsPlainText -Force
@@ -201,6 +254,13 @@ try {
         Copy-Item -Path (Join-Path $pescaTarget "Iniciar_Bot.bat") -Destination "C:\Users\Public\Desktop\Iniciar_Bot_Pesca.bat" -Force
         Write-Host "Atalho do bot unificado (Pesca + Macros) criado em C:\Users\Public\Desktop\Iniciar_Bot_Pesca.bat."
     }
+
+    # Tarefa agendada para iniciar o bot minimizado na barra de tarefas ao logar/conectar no BotUser
+    $vbsMinimizado = "C:\pesca\Iniciar_Bot_Minimizado.vbs"
+    if (Test-Path -LiteralPath $vbsMinimizado) {
+        & icacls $vbsMinimizado /grant "BotUser:F" /Q | Out-Null
+    }
+    Register-BotStartScheduledTask -VbsPath $vbsMinimizado -WorkingDirectory $pescaJunction
 
     # Atalho direto do cliente RDP nativo (Tela Cheia adaptativa + Mouse Relativo) na Area de Trabalho do usuario atual
     $conectarBat = Join-Path $pescaTarget "Conectar_RDP_BotUser.bat"
