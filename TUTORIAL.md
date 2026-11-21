@@ -1,8 +1,8 @@
-# Tutorial Completo — Bot de Pesca Roblox (Sessão RDP Isolada)
+# Tutorial Completo — Bot Unificado de Pesca & Macros (Sessão RDP Isolada)
 
 > **Nota:** Este projeto está em desenvolvimento ativo. Siga os passos na ordem abaixo para evitar erros de permissão, rede ou resolução.
 
-Este guia explica como instalar, abrir e operar o bot em uma sessão local isolada do Windows (`BotUser`), permitindo **minimizar a janela do jogo e usar o seu computador normalmente** enquanto o bot pesca em segundo plano.
+Este guia explica como instalar, exportar para o `BotUser`, abrir e operar o bot unificado (Pesca + Macros/Autoclicker) em uma sessão local isolada do Windows (`BotUser`), permitindo **minimizar a janela do jogo e usar o seu computador normalmente**.
 
 ---
 
@@ -11,29 +11,17 @@ Este guia explica como instalar, abrir e operar o bot em uma sessão local isola
 Antes de começar, certifique-se de ter no seu computador:
 
 1. **Windows 10 ou Windows 11 (64-bit)** com acesso de **Administrador**.
-2. **Node.js LTS** (versão 20 ou 22 recomendada): baixe em [nodejs.org](https://nodejs.org/) e instale usando o caminho padrão (`C:\Program Files\nodejs`).
-3. **Git** (para clonar o repositório): baixe em [git-scm.com](https://git-scm.com/) — opcional caso você baixe o projeto compactado em `.zip`.
-4. **Roblox** instalado no Windows (cliente oficial ou via Bloxstrap).
+2. **Node.js LTS** (versão 20, 22 ou 24 recomendada): baixe em [nodejs.org](https://nodejs.org/) e instale usando o caminho padrão (`C:\Program Files\nodejs`).
+3. **Roblox** instalado no Windows (cliente oficial ou via Bloxstrap).
 
-> **Dica:** Extraia ou clone o projeto em uma pasta fixa (não apague nem mova a pasta depois da instalação, pois o sistema cria uma junção apontando para ela).
+> **Dica:** Mantenha o projeto em uma pasta fixa (não apague nem mova a pasta depois da instalação, pois o sistema utiliza a junção `C:\pesca` apontando para ela).
 
 ---
 
-## Passo 2 — Instalação automática (`Instalar_Tudo.bat`)
+## Passo 2 — Instalação completa ou Exportação para `BotUser`
 
-1. Abra a pasta do projeto.
-2. Clique com o **botão direito** em `Instalar_Tudo.bat` e escolha **Executar como administrador**.
-3. Confirme a janela do Controle de Conta de Usuário (UAC) clicando em **Sim**.
-
-O instalador executa automaticamente as seguintes etapas:
-
-1. **Dependências e compilação**: roda `npm install` para baixar `keysender`, `pngjs` e TypeScript, e compila o código (`tsc` -> pasta `dist/`).
-2. **Usuário isolado `BotUser`**: cria (ou atualiza) o usuário local `BotUser` com senha **`123`** (sem expiração de senha) e o adiciona ao grupo de Administradores para permitir automação de janela e limpeza de RAM.
-3. **Junção `C:\pesca` e atalho**: cria a junção NTFS `C:\pesca` apontando para a pasta do projeto, libera as permissões NTFS para o `BotUser` e cria o atalho `Iniciar_Bot_Pesca.bat` na Área de Trabalho Pública (`C:\Users\Public\Desktop\Iniciar_Bot_Pesca.bat`).
-4. **RDP Wrapper (múltiplas sessões locais)**: baixa e instala o RDP Wrapper em `C:\Program Files\RDP Wrapper`, atualiza o `rdpwrap.ini`, libera a porta `3389` (TCP/UDP) no Firewall do Windows e reinicia o serviço `TermService`.
-5. **GPU física e renderização em segundo plano**: habilita o uso da GPU física na sessão remota (`bEnumerateHWBeforeSW = 1`, profundidade de cor 32-bit) e grava `RemoteDesktop_SuppressWhenMinimized = 2` no Registro para que a captura de tela continue funcionando mesmo quando a janela RDP estiver minimizada.
-6. **Otimizador de RAM e tarefa agendada**: executa [`otimizar_sistema_e_rdp.ps1`](otimizar_sistema_e_rdp.ps1), desativando decodificadores/caches pesados do `mstsc.exe`, aplicando FFlags de baixo consumo (`ClientAppSettings.json`) e qualidade nível `1` / `30 FPS` no Roblox, além de registrar a tarefa agendada **`OtimizadorRAM_PescaBot`** (roda [`trim_ram.ps1`](trim_ram.ps1) a cada 1 minuto como `SYSTEM`).
-7. **Teste de detecção (`npm test`)**: valida automaticamente a leitura da interface usando [`nova_interface.png`](nova_interface.png) e os templates do bot.
+- **Primeira vez neste PC:** clique com o botão direito em `Instalar_Tudo.bat` e escolha **Executar como administrador**. O instalador instala as dependências (`keysender`, `pngjs`, `uiohook-napi`, TypeScript), compila o código, cria o usuário `BotUser` (senha `123`), cria a junção `C:\pesca`, ajusta as permissões NTFS, instala o RDP Wrapper e cria o atalho `Iniciar_Bot_Pesca.bat` em `C:\Users\Public\Desktop`.
+- **Atualizando/Exportando o bot unificado para um `BotUser` já existente:** execute **[`Exportar_BotUser.bat`](Exportar_BotUser.bat)** (como Administrador). Ele valida `C:\pesca`, garante [`profiles.json`](profiles.json), instala dependências pendentes, compila o projeto, aplica permissões NTFS para o `BotUser` e atualiza o atalho `Iniciar_Bot_Pesca.bat` na Área de Trabalho Pública.
 
 ---
 
@@ -42,32 +30,53 @@ O instalador executa automaticamente as seguintes etapas:
 Na sua sessão normal do Windows:
 
 1. Dê um duplo clique em **[`Conectar_RDP_BotUser.bat`](Conectar_RDP_BotUser.bat)** (que abre `mstsc.exe /v:127.0.0.2 /w:960 /h:600`) ou abra **[`Sessao_BotUser.rdp`](Sessao_BotUser.rdp)**.
-2. Se aparecer um aviso de certificado ou segurança na primeira conexão, confirme para continuar.
-3. Se pedir usuário e senha no primeiro logon:
+2. Se pedir usuário e senha no primeiro logon:
    - **Usuário:** `BotUser` (ou `.\BotUser`)
    - **Senha:** `123`
-4. Uma janela de área de trabalho isolada no tamanho **`960x600`** será aberta.
-5. **Dentro dessa janela remota**, abra o Roblox (faça login com a conta que vai pescar, caso ainda não esteja logada no `BotUser`) e entre no jogo.
-
-> **Importante:** Dentro da sessão remota (`960x600`), deixe a janela do Roblox **maximizada** ocupando a tela toda da sessão e posicione o personagem no ponto de pesca com a vara pronta. Se você pretende usar a troca automática de hotbar (`[F8]`), deixe um item neutro/slot vazio na tecla **`1`** e a vara de pesca na tecla **`3`**.
+3. Dentro dessa janela remota (`960x600`), abra o Roblox, entre no jogo e deixe a janela **maximizada**.
 
 ---
 
-## Passo 4 — Iniciar e operar o bot
+## Passo 4 — Operar Pesca, Macros e Gerenciar Atalhos (sem conflitos)
 
-Ainda **dentro da janela da sessão remota (`BotUser`)**:
+Dentro da janela da sessão remota (`BotUser`):
 
 1. Na Área de Trabalho do `BotUser`, dê um duplo clique em **`Iniciar_Bot_Pesca.bat`** (ou abra `C:\pesca` e execute [`Iniciar_Bot.bat`](Iniciar_Bot.bat)).
-2. O terminal vai executar o [`trim_ram.ps1`](trim_ram.ps1), compilar [`bot.ts`](bot.ts), calibrar a ROI para `960x600` (`x=158, y=420, 643x147`) e rodar um auto-teste rápido confirmando que o template foi carregado.
-3. Deixe a janela do Roblox visível na sessão remota e use as teclas de atalho globais:
+2. Clique dentro da janela do Roblox (ou onde deseja executar o macro) e use os atalhos globais padrão:
 
-| Tecla | O que faz |
+| Atalho Padrão | O que faz |
 | --- | --- |
-| **`[F6]`** | **Inicia ou pausa** o ciclo de pesca (lança a linha, aguarda o peixe na ROI, executa o autoclicker e finaliza o ciclo). |
-| **`[F8]`** | **Ativa ou desativa** a troca automática na hotbar (tecla **`1`** -> tecla **`3`**) após cada captura e após timeouts. A escolha fica salva em [`config.json`](config.json). |
-| **`[F7]`** | **Encerra o bot** de forma limpa, garantindo que o botão esquerdo do mouse seja solto antes de fechar o processo. |
+| **`[F6]`** | **Inicia ou pausa a Pesca** (se um Macro estiver ativo, pausa o macro automaticamente antes de iniciar). |
+| **`[F7]`** | **Inicia ou pausa o Macro / Autoclicker** do perfil atual (se a Pesca estiver ativa, pausa a pesca antes de iniciar). |
+| **`[F8]`** | **Ativa ou desativa** a troca automática na hotbar da Pesca (tecla **`1`** -> tecla **`3`**), salvando em [`config.json`](config.json). |
+| **`[Shift+F7]`** | **Alterna para o próximo perfil de Macro** (`1` -> `2` -> `3` -> `4` -> `5` -> `1`). |
+| **`[Shift+F6]`** | **Para tudo imediatamente** (solta botão do mouse e qualquer tecla segurada pelo macro sem fechar o bot). |
+| **`[Ctrl+F8]`** | **Encerra o bot** de forma limpa. |
 
-> **Dica:** Para que `[F6]`, `[F7]` ou `[F8]` sejam capturados pelo bot, clique uma vez dentro da janela da sessão remota (para o teclado estar focado nela) e pressione a tecla desejada.
+> **Dica:** Para que os atalhos globais sejam capturados dentro da sessão remota, a janela da sessão RDP precisa estar focada quando você pressiona o atalho — depois de iniciar a Pesca ou o Macro, você pode minimizar a janela RDP normalmente.
+
+### Como alterar atalhos sem gerar conflitos
+
+No terminal do bot, use os comandos abaixo (todas as alterações são validadas e salvas em [`config.json`](config.json)):
+
+- `atalhos` — Exibe todos os atalhos atuais e suas ações.
+- `atalho <acao> <tecla>` — Troca um atalho (ex.: `atalho macro Shift+F9`, `atalho pesca F5`, `atalho sair Ctrl+F10`).
+  - Ações válidas: `pesca`, `macro`, `hotbar`, `perfil`, `parar`, `sair`.
+  - O gerenciador **bloqueia** automaticamente teclas duplicadas, combinações reservadas do sistema (`Alt+F4`, `Alt+Tab`, `Ctrl+Alt+Delete`, `Escape` puro) e teclas simples que já estejam gravadas em algum perfil de [`profiles.json`](profiles.json).
+- `atalho <acao> capturar` — Aguarda você pressionar fisicamente a nova tecla/combinação no teclado (`ESC` cancela).
+- `atalhos reset` — Restaura os 6 atalhos padrão (`F6`, `F7`, `F8`, `Shift+F7`, `Shift+F6`, `Ctrl+F8`).
+
+### Como gerenciar e gravar os 5 perfis de Macro
+
+- `perfis` — Lista os 5 perfis salvos em [`profiles.json`](profiles.json).
+- `perfil <1-5>` — Seleciona o perfil ativo (ex.: `perfil 3`).
+- `ver` — Exibe mouse, delay do ciclo e sequência de teclas do perfil atual.
+- `nome <texto>` — Renomeia o perfil atual.
+- `gravar` — Grava teclas em sequência (pressione `ESC` para terminar e definir os tempos em ms e o delay do ciclo).
+- `gravar real` — Grava cada tecla medindo exatamente o tempo que você segurou.
+- `tecla <n> <ms>` / `teclas <ms>` / `ciclo <ms>` — Ajusta tempos de uma tecla, de todas as teclas ou do intervalo entre ciclos.
+- `mouse` / `mouse on` / `mouse off` / `mouse <ms>` / `cps <n>` — Configura o autoclick do mouse no perfil atual.
+- `limpar` — Apaga as teclas do perfil atual.
 
 ---
 
@@ -75,58 +84,32 @@ Ainda **dentro da janela da sessão remota (`BotUser`)**:
 
 > **REGRA DE OURO:** Para voltar a usar seu PC normalmente, clique **SEMPRE no botão Minimizar (`_`)** na barra azul superior da janela remota. **NUNCA feche a janela no `X`.**
 
-### Por que isso importa?
-
-- **Se você fechar no `X`**: o cliente RDP desconecta a sessão visual do `BotUser`. Sem uma sessão de exibição conectada, o Windows congela/suspende a composição da tela remota e a captura DWM/BitBlt para de receber novos quadros do Roblox — o bot continua rodando, mas só enxerga tela preta ou parada.
-- **Se você clicar em Minimizar (`_`)**: a configuração **`RemoteDesktop_SuppressWhenMinimized = 2`** (aplicada pelo instalador no Registro do Windows) instrui o cliente RDP a não suprimir a renderização quando minimizado. Assim, o DWM e o `BitBlt` continuam entregando frames normalmente para o [`bot.ts`](bot.ts) dentro da sessão do `BotUser`, enquanto você minimiza a janela na barra de tarefas e usa seu computador principal livremente.
+- **Se você fechar no `X`**: o cliente RDP desconecta a sessão visual do `BotUser` e o Windows pausa a composição da tela remota.
+- **Se você clicar em Minimizar (`_`)**: a chave **`RemoteDesktop_SuppressWhenMinimized = 2`** mantém a renderização DWM ativa em segundo plano enquanto você usa seu computador principal livremente.
 
 ---
 
-## Passo 6 — Ajustes finos e Solução de Problemas
+## Passo 6 — Ajustes finos da Pesca e Solução de Problemas
 
-### 1. Ajustes finos de tempos e sensibilidade
+### Ajustes finos da Pesca
 
-Você pode ajustar os parâmetros sem editar arquivos manualmente: com o terminal do bot aberto (antes de apertar `[F6]` ou com o bot pausado), digite `config` para abrir o assistente passo a passo, ou altere um item direto com `config <chave> <valor>`. Também é possível rodar `npm run config` em um terminal dentro da pasta do projeto.
+Use `pesca config` (ou `npm run config`), ou comandos diretos (`pesca <chave> <valor>` / `config <chave> <valor>`):
 
 | Comando no terminal | Chave em `config.json` | Padrão atual | Quando ajustar |
 | --- | --- | --- | --- |
-| `config cast <ms>` | `timings.castHoldMs` | `1100` ms | Tempo segurando o clique ao lançar a linha. Diminua se a barra passar do *Perfect*; aumente se o lançamento ficar curto. |
-| `config press <ms>` | `timings.clickPressMs` | `25` ms | Tempo com o botão esquerdo pressionado por clique durante a captura. |
-| `config release <ms>` | `timings.clickReleaseMs` | `25` ms | Tempo com o botão solto entre cliques (`25 + 25 = 50 ms`, equivalente a ~20 CPS; também aceita `config cps <valor>`). |
-| `config capture <ms>` | `timings.captureDurationMs` | `2700` ms | Duração total da sequência de cliques após detectar o peixe. Aumente se estiver faltando poucos cliques para finalizar a barra. |
-| `config cooldown <ms>` | `timings.cooldownMs` | `4000` ms | Tempo de espera/coleta ao final do ciclo quando a troca de hotbar (`F8`) está desativada. |
-| `config threshold <valor>` | `vision.threshold` | `0.78` | Sensibilidade visual (`0.50` a `0.99`, ou `50` a `99`). Abaixe um pouco (ex.: `0.73`) se não detectar a barra; aumente (ex.: `0.82`) se clicar antes da hora. |
-| `hotbar` (ou `config hotbar on/off`) | `hotbar.enabled` | `false` | Liga ou desliga a troca `1` -> `3` para reequipar a vara entre ciclos (mesmo efeito do `[F8]`). |
-| `config timeout <ms>` | `timings.biteTimeoutMs` | `12000` ms | Tempo máximo esperando o peixe morder antes de reiniciar o lançamento. |
+| `config cast <ms>` | `timings.castHoldMs` | `1100` ms | Tempo segurando o clique ao lançar a linha. |
+| `config press <ms>` | `timings.clickPressMs` | `25` ms | Tempo com botão esquerdo pressionado por clique na captura. |
+| `config release <ms>` | `timings.clickReleaseMs` | `25` ms | Tempo com botão solto entre cliques na captura (ou use `config cps <n>`). |
+| `config capture <ms>` | `timings.captureDurationMs` | `2700` ms | Duração total da sequência de cliques após detectar o peixe. |
+| `config cooldown <ms>` | `timings.cooldownMs` | `4000` ms | Tempo de espera/coleta quando a troca de hotbar está desativada. |
+| `config threshold <valor>` | `vision.threshold` | `0.78` | Sensibilidade visual (`0.50` a `0.99`, ou `50` a `99`). |
+| `hotbar` (`on`/`off`) | `hotbar.enabled` | `false` | Liga ou desliga a troca `1` -> `3` para reequipar a vara entre ciclos. |
+| `config timeout <ms>` | `timings.biteTimeoutMs` | `12000` ms | Tempo máximo esperando o peixe morder antes de relançar. |
 | `config polling <ms>` | `timings.pollingIntervalMs` | `35` ms | Intervalo entre leituras da tela na fase de espera. |
 
-Todas as alterações ficam gravadas automaticamente em [`config.json`](config.json). Se usar a hotbar ativada (`F8`), os tempos finos da animação de coleta e troca (`postCaptureDelayMs: 1500`, `keyPressMs: 100`, `slotSwitchDelayMs: 500`, `postEquipDelayMs: 1200`) também podem ser editados diretamente no [`config.json`](config.json).
+### Solução de Problemas (Troubleshooting)
 
----
-
-### 2. Solução de Problemas (Troubleshooting)
-
-#### Erro RDP `0x3` / `0x9` ou falha de logon/segurança (NLA)
-- **Sintoma:** Ao abrir a sessão remota, aparece erro `0x3`, `0x9`, falha de CredSSP/NLA ou usuário/senha recusados.
-- **Como resolver:**
-  1. Execute [`setup_rdp_botuser.ps1`](setup_rdp_botuser.ps1) novamente como **Administrador** para reaplicar `UserAuthentication = 0`, `SecurityLayer = 0`, regras de firewall na porta `3389`, atualizar o `rdpwrap.ini` e reiniciar o serviço `TermService`.
-  2. Dê preferência ao **[`Conectar_RDP_BotUser.bat`](Conectar_RDP_BotUser.bat)** (ele conecta direto em `127.0.0.2` sem depender de nome de máquina salvo).
-  3. Se solicitar credenciais, digite o usuário como **`.\BotUser`** e a senha **`123`**.
-  4. Caso o Windows tenha atualizado recentemente e alterado a versão do `termsrv.dll`, verifique no `RDPConf.exe` (extraído junto ao RDP Wrapper em `%TEMP%\RDPWrap-v1.6.2`) se o status do listener aparece como ativo/suportado.
-
-#### Tela congelada ao minimizar a janela RDP
-- **Sintoma:** O bot funciona com a janela remota aberta na tela, mas para de detectar peixes (`Captura válida: Não` ou similaridade travada) assim que você minimiza.
-- **Como resolver:**
-  1. Confira se você clicou em **Minimizar (`_`)** e **não** fechou a janela no **`X`**.
-  2. Rode [`otimizar_sistema_e_rdp.ps1`](otimizar_sistema_e_rdp.ps1) (ou [`setup_rdp_botuser.ps1`](setup_rdp_botuser.ps1)) como **Administrador** na sua sessão principal para garantir que `RemoteDesktop_SuppressWhenMinimized = 2` esteja gravado em `HKCU`, `HKLM` e `WOW6432Node`.
-  3. Feche a janela atual do `mstsc.exe` e reconecte pelo [`Conectar_RDP_BotUser.bat`](Conectar_RDP_BotUser.bat) para que o cliente carregue a chave atualizada do Registro (o Roblox e o terminal na sessão do `BotUser` continuam abertos).
-
-#### Resolução, escala da barra ou bot não detectando o minigame
-- **Sintoma:** A captura está funcionando (`Captura válida: Sim`), mas a similaridade fica abaixo do limiar (`0.78`) e o bot vai para timeout sem clicar.
-- **Como entender e resolver:**
-  1. Ao iniciar, a função `autoCalibrateRoiForScreen()` do [`bot.ts`](bot.ts) detecta a resolução da tela da sessão e calcula a ROI proporcionalmente (`x = 16.5%`, `y = 70%`, `width = 67%`, `height = 24.5%`), salvando em [`config.json`](config.json).
-  2. O Template Matching multi-escala inclui fatores de `0.667` até `1.345` (cobrindo de **`960x600`** até `1920x1080`) e prioriza a escala correspondente à altura da tela atual (`altura / 900`).
-  3. **Use a resolução padrão `960x600`** via [`Conectar_RDP_BotUser.bat`](Conectar_RDP_BotUser.bat) (ROI calibrada: `x=158, y=420, 643x147`).
-  4. Verifique se a janela do Roblox dentro da sessão remota está **maximizada** (sem cortes na parte inferior) e se a escala de exibição (DPI) do Windows na conta `BotUser` está em **100%**.
-  5. Se você redimensionou a janela RDP depois que o bot já estava aberto, pressione `[F7]` para fechar o bot e inicie-o novamente para recalibrar a ROI.
-  6. Digite `test` no terminal do bot (ou rode `npm test`) para confirmar que a detecção de [`peixe_alvo.png`](peixe_alvo.png), [`moldura_barra.png`](moldura_barra.png) e [`botao_parar.png`](botao_parar.png) em [`nova_interface.png`](nova_interface.png) está identificando a interface corretamente.
+- **Erro RDP `0x3` / `0x9` ou falha de logon:** execute [`setup_rdp_botuser.ps1`](setup_rdp_botuser.ps1) como Administrador e reconecte com [`Conectar_RDP_BotUser.bat`](Conectar_RDP_BotUser.bat).
+- **Tela congelada ao minimizar:** verifique se minimizou no `_` (e não no `X`), execute [`otimizar_sistema_e_rdp.ps1`](otimizar_sistema_e_rdp.ps1) como Administrador e reconecte o `mstsc.exe`.
+- **Bot não detecta o minigame:** mantenha o RDP em `960x600`, Roblox maximizado e rode `test` no terminal (ou `npm test`) para validar os templates [`peixe_alvo.png`](peixe_alvo.png), [`moldura_barra.png`](moldura_barra.png) e [`botao_parar.png`](botao_parar.png).
+- **BotUser sem acesso a arquivos novos ou atalho desatualizado:** execute [`Exportar_BotUser.bat`](Exportar_BotUser.bat) como Administrador para reaplicar as permissões NTFS e sincronizar `C:\Users\Public\Desktop\Iniciar_Bot_Pesca.bat`.

@@ -196,9 +196,10 @@ try {
     }
     & icacls $pescaTarget /grant "BotUser:(OI)(CI)F" /T /Q | Out-Null
 
+    # Atalho do bot unificado (Pesca + Macros/Autoclicker) na Area de Trabalho do BotUser
     if (Test-Path (Join-Path $pescaTarget "Iniciar_Bot.bat")) {
         Copy-Item -Path (Join-Path $pescaTarget "Iniciar_Bot.bat") -Destination "C:\Users\Public\Desktop\Iniciar_Bot_Pesca.bat" -Force
-        Write-Host "Atalho C:\Users\Public\Desktop\Iniciar_Bot_Pesca.bat criado."
+        Write-Host "Atalho do bot unificado (Pesca + Macros) criado em C:\Users\Public\Desktop\Iniciar_Bot_Pesca.bat."
     }
 
     Write-Host "=== [2/5] Aplicando RemoteDesktop_SuppressWhenMinimized = 2 e cliente RDP enxuto ==="
@@ -218,7 +219,8 @@ try {
         "EnableFrameBufferRedirection",
         "OffscreenSupportLevel",
         "OffscreenCacheSize",
-        "OffscreenCacheEntries"
+        "OffscreenCacheEntries",
+        "ForceDisableRelativeMouseMode"
     )
     foreach ($regPath in $suppressPaths) {
         Set-RegistryDword -Path $regPath -Name "RemoteDesktop_SuppressWhenMinimized" -Value 2
@@ -258,7 +260,7 @@ try {
     $winStationsPath = "HKLM:\SYSTEM\CurrentControlSet\Control\Terminal Server\WinStations"
     Set-RegistryDword -Path $winStationsPath -Name "DWMFRAMEINTERVAL" -Value 33
     Set-RegistryDword -Path $winStationsPath -Name "ThrottlingDisabled" -Value 1
-    foreach ($prop in @("ProgressiveRefinementEnabled", "FixedQualityProgressive")) {
+    foreach ($prop in @("ProgressiveRefinementEnabled", "FixedQualityProgressive", "ForceDisableRdpRelativeMouse")) {
         Remove-ItemProperty -Path $winStationsPath -Name $prop -ErrorAction SilentlyContinue
     }
     Write-Host "Politicas de GPU e profundidade de cor (32-bit) aplicadas."
@@ -273,7 +275,7 @@ try {
     Set-RegistryDword -Path $rdpTcpPath -Name "SecurityLayer" -Value 0
     Set-RegistryDword -Path $rdpTcpPath -Name "ThrottlingDisabled" -Value 1
     Set-RegistryDword -Path $rdpTcpPath -Name "DWMFRAMEINTERVAL" -Value 33
-    foreach ($prop in @("ProgressiveRefinementEnabled", "FixedQualityProgressive")) {
+    foreach ($prop in @("ProgressiveRefinementEnabled", "FixedQualityProgressive", "ForceDisableRdpRelativeMouse")) {
         Remove-ItemProperty -Path $rdpTcpPath -Name $prop -ErrorAction SilentlyContinue
     }
 
@@ -317,25 +319,26 @@ try {
     }
     Write-Host "Credenciais e arquivos RDP configurados para $rdpCredUser."
 
-    Write-Host "=== [5/5] Instalando e configurando RDP Wrapper (10.0.26100.9549) ==="
+    $tsVi = (Get-Item "C:\Windows\System32\termsrv.dll").VersionInfo
+    $termsrvVer = "$($tsVi.FileMajorPart).$($tsVi.FileMinorPart).$($tsVi.FileBuildPart).$($tsVi.FilePrivatePart)"
+    Write-Host "=== [5/5] Instalando e configurando RDP Wrapper (termsrv.dll $termsrvVer) ==="
     $rdpWrapDir = "C:\Program Files\RDP Wrapper"
     $extractDir = Join-Path $env:TEMP "RDPWrap-v1.6.2"
     Add-MpPreference -ExclusionPath $rdpWrapDir -ErrorAction SilentlyContinue
     Add-MpPreference -ExclusionPath $extractDir -ErrorAction SilentlyContinue
-
-    $zipPath = Join-Path $env:TEMP "RDPWrap-v1.6.2.zip"
-    if (-not (Test-Path $zipPath)) {
-        Write-Host "Baixando RDPWrap-v1.6.2.zip..."
-        Invoke-WebRequest -Uri "https://github.com/stascorp/rdpwrap/releases/download/v1.6.2/RDPWrap-v1.6.2.zip" -OutFile $zipPath -UseBasicParsing
-    }
-
-    if (-not (Test-Path $extractDir)) {
-        New-Item -ItemType Directory -Path $extractDir -Force | Out-Null
-    }
-    Expand-Archive -Path $zipPath -DestinationPath $extractDir -Force
+    [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 
     $rdpWrapDll = Join-Path $rdpWrapDir "rdpwrap.dll"
     if (-not (Test-Path $rdpWrapDll)) {
+        if (-not (Test-Path $extractDir)) {
+            New-Item -ItemType Directory -Path $extractDir -Force | Out-Null
+        }
+        $zipPath = Join-Path $extractDir "RDPWrap-v1.6.2.zip"
+        if (-not (Test-Path $zipPath)) {
+            Write-Host "Baixando RDPWrap-v1.6.2.zip..."
+            Invoke-WebRequest -Uri "https://github.com/stascorp/rdpwrap/releases/download/v1.6.2/RDPWrap-v1.6.2.zip" -OutFile $zipPath -UseBasicParsing
+        }
+        Expand-Archive -Path $zipPath -DestinationPath $extractDir -Force
         Write-Host "Executando RDPWInst.exe -i..."
         $instProc = Start-Process -FilePath (Join-Path $extractDir "RDPWInst.exe") -ArgumentList "-i" -WorkingDirectory $extractDir -Wait -NoNewWindow -PassThru
         Write-Host "RDPWInst.exe finalizado com codigo $($instProc.ExitCode)."
@@ -351,50 +354,75 @@ try {
         Start-Sleep -Milliseconds 500
     }
 
-    $iniSrc = Join-Path $env:TEMP "rdpwrap_check.ini"
-    if (-not (Test-Path $iniSrc)) {
+    $iniSrc = Join-Path $env:TEMP "rdpwrap_latest.ini"
+    $iniDst = Join-Path $rdpWrapDir "rdpwrap.ini"
+    $iniDownloaded = $false
+    try {
         Write-Host "Baixando rdpwrap.ini atualizado..."
-        Invoke-WebRequest -Uri "https://raw.githubusercontent.com/sebaxakerhtc/rdpwrap.ini/master/rdpwrap.ini" -OutFile $iniSrc -UseBasicParsing
+        Invoke-WebRequest -Uri "https://raw.githubusercontent.com/sebaxakerhtc/rdpwrap.ini/master/rdpwrap.ini" -OutFile $iniSrc -UseBasicParsing -TimeoutSec 20
+        $iniDownloaded = $true
+    } catch {
+        Write-Host "Aviso: falha ao baixar rdpwrap.ini online ($($_.Exception.Message)). Tentando cache local..."
+    }
+
+    $iniReadPath = $null
+    if ($iniDownloaded -and (Test-Path $iniSrc)) {
+        $iniReadPath = $iniSrc
+    } elseif (Test-Path $iniSrc) {
+        $iniReadPath = $iniSrc
+    } elseif (Test-Path (Join-Path $env:TEMP "rdpwrap_check.ini")) {
+        $iniReadPath = Join-Path $env:TEMP "rdpwrap_check.ini"
+    } elseif (Test-Path $iniDst) {
+        $iniReadPath = $iniDst
+    } else {
+        throw "Nao foi possivel baixar rdpwrap.ini e nenhuma copia em cache foi encontrada."
     }
 
     $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
-    $iniText = [System.IO.File]::ReadAllText($iniSrc, $utf8NoBom)
+    $iniText = [System.IO.File]::ReadAllText($iniReadPath, $utf8NoBom)
 
-    $mirrorMain = @"
-[10.0.26100.9949]
+    if (($termsrvVer -eq "10.0.26100.9818") -and ($iniText -notmatch "(?m)^\[10\.0\.26100\.9818\]")) {
+        $fallbackMain = @"
+[10.0.26100.9818]
+LocalOnlyPatch.x64=1
+LocalOnlyOffset.x64=9FA61
+LocalOnlyCode.x64=jmpshort
 SingleUserPatch.x64=1
-SingleUserOffset.x64=A96FB
+SingleUserOffset.x64=AC5DB
 SingleUserCode.x64=mov_eax_1_nop_2
 DefPolicyPatch.x64=1
-DefPolicyOffset.x64=A689D
+DefPolicyOffset.x64=A977D
 DefPolicyCode.x64=CDefPolicy_Query_r9d_rdi_jmp
-LocalOnlyPatch.x64=1
-LocalOnlyOffset.x64=9CB81
-LocalOnlyCode.x64=jmpshort
 SLInitHook.x64=1
-SLInitOffset.x64=BD8B8
+SLInitOffset.x64=C0798
 SLInitFunc.x64=New_CSLQuery_Initialize
 "@ -replace "`r?`n", "`r`n"
 
-    $mirrorSLInit = @"
-[10.0.26100.9949-SLInit]
-bServerSku.x64=131314
-bRemoteConnAllowed.x64=13132C
-bFUSEnabled.x64=13133C
-bAppServerAllowed.x64=131320
-bMultimonAllowed.x64=131330
-lMaxUserSessions.x64=131318
-ulMaxDebugSessions.x64=131338
-bInitialized.x64=131310
+        $fallbackSLInit = @"
+[10.0.26100.9818-SLInit]
+bInitialized.x64=135350
+bServerSku.x64=135354
+lMaxUserSessions.x64=135358
+bAppServerAllowed.x64=135360
+bRemoteConnAllowed.x64=13536C
+bMultimonAllowed.x64=135370
+ulMaxDebugSessions.x64=135378
+bFUSEnabled.x64=13537C
 "@ -replace "`r?`n", "`r`n"
 
-    if ($iniText -notmatch "\[10\.0\.26100\.9949\]") {
-        $iniText = $iniText.TrimEnd("`r", "`n") + "`r`n`r`n" + $mirrorMain + "`r`n`r`n" + $mirrorSLInit + "`r`n"
+        $iniText = $iniText.TrimEnd("`r", "`n") + "`r`n`r`n" + $fallbackMain + "`r`n`r`n" + $fallbackSLInit + "`r`n"
+        Write-Host "Secao offline de fallback [10.0.26100.9818] adicionada ao rdpwrap.ini."
     }
 
-    $iniDst = Join-Path $rdpWrapDir "rdpwrap.ini"
+    $hasSection = $iniText -match "(?m)^\[$([regex]::Escape($termsrvVer))\]"
+    if ($hasSection) {
+        Write-Host "Secao [$termsrvVer] encontrada no rdpwrap.ini."
+    } else {
+        Write-Host "AVISO: secao [$termsrvVer] NAO encontrada no rdpwrap.ini! O listener RDP pode nao iniciar."
+    }
+
     [System.IO.File]::WriteAllText($iniDst, $iniText, $utf8NoBom)
-    Write-Host "Arquivo $iniDst atualizado com secoes 10.0.26100.9549 e 10.0.26100.9949."
+    Write-Host "Arquivo $iniDst atualizado (versao alvo: $termsrvVer)."
 
     $termParamsPath = "HKLM:\SYSTEM\CurrentControlSet\Services\TermService\Parameters"
     Set-ItemProperty -Path $termParamsPath -Name "ServiceDll" -Value $rdpWrapDll -Type ExpandString -Force
@@ -402,10 +430,19 @@ bInitialized.x64=131310
 
     Set-Service -Name "TermService" -StartupType Automatic
     Start-Service -Name "TermService"
-    Start-Sleep -Seconds 2
+
+    $listening3389 = $false
+    for ($i = 0; $i -lt 12; $i++) {
+        Start-Sleep -Milliseconds 500
+        $conns = Get-NetTCPConnection -LocalPort 3389 -State Listen -ErrorAction SilentlyContinue
+        if ($conns) {
+            $listening3389 = $true
+            break
+        }
+    }
 
     $svcFinal = Get-Service -Name "TermService"
-    Write-Host "TermService Status: $($svcFinal.Status) | StartType: $($svcFinal.StartType)"
+    Write-Host "TermService Status: $($svcFinal.Status) | StartType: $($svcFinal.StartType) | Porta 3389 em Listen: $listening3389"
 }
 finally {
     Stop-Transcript | Out-Null

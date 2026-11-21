@@ -139,7 +139,7 @@ try {
     Set-RegistryDword -Path $winStations -Name "ThrottlingDisabled" -Value 1
 
     foreach ($wsPath in @($rdpTcp, $winStations)) {
-        foreach ($prop in @("ProgressiveRefinementEnabled", "FixedQualityProgressive")) {
+        foreach ($prop in @("ProgressiveRefinementEnabled", "FixedQualityProgressive", "ForceDisableRdpRelativeMouse")) {
             Remove-ItemProperty -Path $wsPath -Name $prop -ErrorAction SilentlyContinue
         }
     }
@@ -160,7 +160,8 @@ try {
         "EnableFrameBufferRedirection",
         "OffscreenSupportLevel",
         "OffscreenCacheSize",
-        "OffscreenCacheEntries"
+        "OffscreenCacheEntries",
+        "ForceDisableRelativeMouseMode"
     )
     foreach ($cp in $clientPaths) {
         Set-RegistryDword -Path $cp -Name "RemoteDesktop_SuppressWhenMinimized" -Value 2

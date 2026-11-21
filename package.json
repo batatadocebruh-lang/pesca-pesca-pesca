@@ -1,7 +1,7 @@
 {
-  "name": "pesca-roblox-bot",
-  "version": "1.1.0",
-  "description": "Automação de pesca no Roblox utilizando keysender e template matching em buffer BGRA",
+  "name": "pesca-macros-roblox-bot",
+  "version": "2.0.0",
+  "description": "Automação unificada de pesca e macros/autoclicker no Roblox com keysender, uiohook-napi e template matching BGRA",
   "main": "bot.ts",
   "scripts": {
     "start": "tsc && node --expose-gc --max-old-space-size=96 dist/bot.js",
@@ -11,7 +11,8 @@
   },
   "dependencies": {
     "keysender": "^2.4.0",
-    "pngjs": "^7.0.0"
+    "pngjs": "^7.0.0",
+    "uiohook-napi": "^1.5.5"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",

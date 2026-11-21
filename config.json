@@ -1,9 +1,9 @@
 {
   "roi": {
-    "x": 238,
-    "y": 630,
-    "width": 965,
-    "height": 221
+    "x": 158,
+    "y": 420,
+    "width": 643,
+    "height": 147
   },
   "timings": {
     "castHoldMs": 1100,
@@ -29,5 +29,16 @@
   "vision": {
     "threshold": 0.78,
     "useCardFrameFallback": true
+  },
+  "hotkeys": {
+    "toggleFishing": "F6",
+    "toggleMacro": "F7",
+    "toggleHotbarSwitch": "F8",
+    "nextMacroProfile": "Shift+F7",
+    "stopAll": "Shift+F6",
+    "exitProcess": "Ctrl+F8"
+  },
+  "macro": {
+    "activeProfileIndex": 0
   }
 }

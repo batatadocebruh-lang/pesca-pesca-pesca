@@ -1,5 +1,5 @@
 @echo off
-title Bot de Pesca - Roblox (Sessao RDP)
+title Bot Unificado (Pesca + Macros) - Roblox (Sessao RDP)
 set "PATH=%PATH%;C:\Program Files\nodejs"
 if exist "C:\pesca\package.json" (
     cd /d "C:\pesca"
@@ -11,7 +11,16 @@ if exist "C:\pesca\trim_ram.ps1" (
 ) else if exist "%~dp0trim_ram.ps1" (
     powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0trim_ram.ps1" >nul 2>&1
 )
-echo Compilando e iniciando Bot de Pesca em %CD%...
+if not exist "node_modules\uiohook-napi\package.json" (
+    echo Instalando dependencias pendentes ^(uiohook-napi^)...
+    call npm install
+    if errorlevel 1 (
+        echo Falha ao instalar dependencias Node.js.
+        pause >nul
+        exit /b 1
+    )
+)
+echo Compilando e iniciando Bot Unificado (Pesca + Macros) em %CD%...
 call npx tsc
 if errorlevel 1 (
     echo Falha ao compilar TypeScript.
